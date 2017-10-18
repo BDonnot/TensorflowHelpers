@@ -1016,9 +1016,22 @@ class ExpGraph:
         self.loss = None
 
     def getnbparam(self):
-        """Return the number of total free parameters of the neural network"""
+        """
+        :return:  the number of total free parameters of the neural network"""
         return self.nn.getnbparam()
 
+    def getflops(self):
+        """
+        flops are computed using formulas in https://mediatum.ub.tum.de/doc/625604/625604
+        it takes into account both multiplication and addition. Results are given for a minibatch of 1 example.
+        :return: the number of flops of the neural network build 
+        """
+        return self.nn.getflops()
+
+    def getnbparam(self):
+        """
+        :return:  the number of total free parameters of the neural network"""
+        return self.nn.getnbparam()
     def getoutput(self):
         """
         :return: The "last" node of the graph, that serves as output
@@ -1259,10 +1272,10 @@ class ExpModel:
         timesaving = tmp.total_seconds()  # ellapsed time saving data, in seconds
 
         self.exp_params.minibatchnum += 1
-        print(
-            "{:%H:%M:%S.%f} minibatchnum {}".format(
-                datetime.datetime.now(),
-                self.exp_params.minibatchnum))
+        # print(
+        #     "{:%H:%M:%S.%f} minibatchnum {}".format(
+        #         datetime.datetime.now(),
+        #         self.exp_params.minibatchnum))
 
         return newepoch, is_error_nan, losscomputed, valloss, timedata, timeTrain, timesaving
 
@@ -1501,7 +1514,7 @@ class Exp:
 
         dict_summary = {}
         dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
-        dict_summary["flops"] = "{}".format(self.graph.get())
+        dict_summary["flops"] = "{}".format(self.graph.getflops())
         self.writesummaryExp(dict_summary)
 
     def logend(self, is_error_nan):
@@ -1532,7 +1545,7 @@ class Exp:
         dict_summary["data_getting_time"] = self.timedata
         dict_summary["data_saving_time"] = self.timesaving
         dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
-        dict_summary["flops"] = "{}".format(self.graph.get())
+        dict_summary["flops"] = "{}".format(self.graph.getflops())
 
         self.writesummaryExp(dict_summary)
 
@@ -1549,7 +1562,7 @@ class Exp:
             dict_summary["training_steps"] += self.trainingsteps
             dict_summary["data_getting_time"] += self.timedata
             dict_summary["data_saving_time"] += self.timesaving
-            dict_summary["flops"] = "{}".format(self.graph.get())
+            dict_summary["flops"] = "{}".format(self.graph.getflops())
             dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
             # dict_summary["l1_val_loss"] += "{}".format(self.vallos[-1])
         else:
@@ -1560,7 +1573,7 @@ class Exp:
             dict_summary["data_saving_time"] = self.timesaving
             dict_summary["l1_val_loss"] = "{}".format(self.valloss[-1])
             dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
-            dict_summary["flops"] = "{}".format(self.graph.get())
+            dict_summary["flops"] = "{}".format(self.graph.getflops())
             dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
 
         self.writesummaryExp(dict_summary)
