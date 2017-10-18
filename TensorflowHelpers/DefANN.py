@@ -18,7 +18,7 @@ import tensorflow as tf
 
 
 class DenseLayer:
-    def __init__(self, input, size, relu=False, bias=True, guided_dropout_mask=None, weight_normalization=False):
+    def __init__(self, input, size, relu=False, bias=True, guided_dropconnect_mask=None, weight_normalization=False, keep_prob=None):
         """
         for weight normalization see https://arxiv.org/abs/1602.07868
         for counting the flops of operations see https://mediatum.ub.tum.de/doc/625604/625604
@@ -26,8 +26,9 @@ class DenseLayer:
         :param size: layer size (number of outputs units)
         :param relu: do you use relu ?
         :param bias: do you add bias ?
-        :param guided_dropout_mask: tensor of the mask matrix  #TODO 
+        :param guided_dropconnect_mask: tensor of the mask matrix  #TODO 
         :param weight_normalization: do you use weight normalization (see https://arxiv.org/abs/1602.07868)
+        :param keep_prob: a scalar tensor for dropout layer (None if you don't want to use it)
         :return: the output after computation
         """
 
@@ -47,17 +48,17 @@ class DenseLayer:
         if weight_normalization:
             self.weightnormed = True
             self.g = tf.get_variable(shape=[size],
-                                name="weigth_normalization_g",
+                                name="weight_normalization_g",
                                 initializer=tf.constant_initializer(value=1.0, dtype="float32"),
                                 trainable=True)
             self.nbparams += int(size)
-            self.scaled_matrix = tf.nn.l2_normalize(self.w, dim=0, name="weigth_normalization_scaled_matrix")
+            self.scaled_matrix = tf.nn.l2_normalize(self.w, dim=0, name="weight_normalization_scaled_matrix")
             self.flops += size*(2*nin_-1) # clomputation of ||v|| (size comptuation of inner product of vector of size nin_)
-            self.flops += 2*nin_-1 # division by ||v|| (matrix vector product)
-            self.w = tf.multiply(self.scaled_matrix, self.g, name="weigth_normalization_weights")
-            self.flops += 2*nin_-1 # multiplication by g (matrix vector product)
+            self.flops += 2*nin_-1  # division by ||v|| (matrix vector product)
+            self.w = tf.multiply(self.scaled_matrix, self.g, name="weight_normalization_weights")
+            self.flops += 2*nin_-1  # multiplication by g (matrix vector product)
 
-        if guided_dropout_mask is not None:
+        if guided_dropconnect_mask is not None:
             #TODO implement it
             pass
         self.res = tf.matmul(self.input, self.w, name="multiplying_weight_matrix")
@@ -75,7 +76,14 @@ class DenseLayer:
 
         if relu:
             self.res = tf.nn.relu(self.res, name="applying_relu")
-            self.flops += size  # we consider relu of requiring 1 comptuiation (one max)
+            self.flops += size  # we consider relu of requiring 1 computation per number (one max)
+
+        if keep_prob is not None:
+            self.res = tf.nn.dropout(self.res, keep_prob=keep_prob, name="applying_dropout")
+            # we consider that generating random number count for 1 operation
+            self.flops += size  # generate the "size" real random numbers
+            self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
+            self.flops += size  # element wise multiplication with res
 
     def initwn(self, sess, scale_init=1.0):
         """
@@ -96,7 +104,7 @@ class DenseLayer:
                 sess.run(tf.assign(self.b, -m_init*scale_init, name="weigth_normalization_init_b"))
 
 class NNFully:
-    def __init__(self, input, outputsize, layersizes=(100,), weightnorm=False, bias = True):
+    def __init__(self, input, outputsize, layersizes=(100,), weightnorm=False, bias=True):
         """
         Most classical form of neural network,
         It takes intput as input, add hidden layers of sizes in layersizes.
@@ -124,17 +132,18 @@ class NNFully:
         #hidden layers
         for i, ls in enumerate(layersizes):
             # if size of input = layer size, we still apply guided dropout!
-            with tf.variable_scope("dense_layer_{}".format(i)):
-                new_layer = DenseLayer(input=z, size=ls, relu=True, bias=bias, guided_dropout_mask=None,
+            with tf.variable_scope("dense_layer_{}".format(i), reuse=reuse):
+                new_layer = DenseLayer(input=z, size=ls, relu=True, bias=bias, guided_dropconnect_mask=None,
                                        weight_normalization=weightnorm)
             self.layers.append(new_layer)
             z = new_layer.res
 
         # output layer
         self.output = None
-        with tf.variable_scope("last_dense_layer", reuse=reuse) as scope:
+        self.pred = None
+        with tf.variable_scope("last_dense_layer", reuse=reuse):
             self.output = DenseLayer(input=z, size=outputsize, relu=False, bias=bias,
-                                     guided_dropout_mask=None, weight_normalization=weightnorm)
+                                     guided_dropconnect_mask=None, weight_normalization=weightnorm)
             self.pred = tf.identity(self.output.res, name="output")
 
     def getnbparam(self):
@@ -147,7 +156,7 @@ class NNFully:
         res += self.output.nbparams
         return res
 
-    def getflops(self):
+    def getflop(self):
         """
         flops are computed using formulas in https://mediatum.ub.tum.de/doc/625604/625604
         it takes into account both multiplication and addition. Results are given for a minibatch of 1 example.

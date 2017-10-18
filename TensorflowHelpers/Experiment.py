@@ -16,6 +16,7 @@ import numpy as np
 import tensorflow as tf
 
 from .DefANN import NNFully
+from .DefDataHandler import ExpData
 
 TRAINING_COLLECTION_NAME = "train_op"
 NAMESAVEDTFVARS = 'savedvars'
@@ -318,699 +319,30 @@ class ExpLogger:
         self.tfwriter.saver.restore(sess, os.path.join(path, name))
 
 
-class ExpDataReader:
-    def __init__(self, train, batch_size):
-        """Read the usefull data for the Experience to run
-        Store both input and outputs
-        :param train: if True this data reader concerns the training set
-        :param batch_size: number of data to read each time the iterator is called
-        """
-        self.dataX = np.zeros(
-            (0, 0), dtype=np.float32)  # main data set (eg the training set)
-        # main data set (eg the training set)
-        self.dataY = np.zeros((0, 0), dtype=np.float32)
-        self.dataset = tf.contrib.data.Dataset.from_tensor_slices(
-            (self.dataX, self.dataY))
-
-        self.mX = tf.constant(0.)
-        self.mY = tf.constant(0.)
-        self.sdX = tf.constant(1.)
-        self.sdY = tf.constant(0.)
-
-    def nrowsX(self):
-        """
-        :return: The number of rows / examples of the input data set
-        """
-        return self._nrows(self.dataX)
-
-    def _nrowsY(self):
-        """
-        :return: The number of rows / examples of the output data set
-        """
-        return self._nrows(self.dataY)
-
-    def _ncols(self, array):
-        """
-        :param array: the concerned "array"
-        :return: The number of columns / variables of the data set  "array"
-        """
-        return array.shape[1]
-
-    def _nrows(self, array):
-        """
-        :param array: the concerned "array"
-        :return: The number of  rows / examples of the data set  "array"
-        """
-        return array.shape[0]
-
-    def ncolsX(self):
-        """
-        :return: The number of columns / variables of the input data set
-        """
-        return self._ncols(self.dataX)
-
-    def ncolsY(self):
-        """
-        :return: The number of columns / variables of the output data set
-        """
-        return self._ncols(self.dataY)
-
-    def init(self, sess):
-        """
-        Initialize the datasets (if need to be done)
-        :return:
-        """
-        pass
-
-
-class ExpDataReaderNPY(ExpDataReader):  # TODO! does not work!!!
-    def __init__(self, dataX=None, dataY=None, filenames=None, pathdata="."):
-        """
-        Read from npy files or take a numpy array as input.
-        Be carefull, only one of 'data' or 'filename' must be provided.
-        If data is provided, the data will not be copied.
-        :param dataX: numpy array (or equivalent) for the input data
-        :param dataY: numpy array (or equivalent) for the output data
-        :param filenames: filenamaes of npy files where data are stored
-        :param pathdata: path where data are stored
-        """
-        raise RuntimeError("Do not use ExpDatReaderNPY yet!")
-        ExpDataReader.__init__(self)
-        if (filenames is None or len(filenames) == 0) and (
-                dataX is None or dataY is None):
-            raise RuntimeError(
-                "ExpDataReaderNPY.__init__: you must provide at least a numpy array in dataX / dataY or a filename")
-
-        if (filenames is not None or len(filenames) == 2) and (
-                dataX is not None and dataY is not None):
-            raise RuntimeError(
-                "ExpDataReaderNPY.__init__: you must provide only one 'dataX / dataY' or 'filename' fields")
-
-        if dataX is not None and dataY is None:
-            raise RuntimeError(
-                "ExpDataReaderNPY.__init__: you should provide both dataX and dataY or none of them.")
-        if len(filenames) != 2:
-            raise RuntimeError(
-                "ExpDataReaderNPY.__init__: you should provide 2 names in filenames: the name of the input data and the one ouput data in filenames.")
-
-        if filenames is not None:
-            if re.match(".*\\.npy$", filenames[0]):
-                self.dataX = np.load(os.path.join(pathdata, filenames[0]))
-                self.dataY = np.load(os.path.join(pathdata, filenames[1]))
-            elif re.match(".*\\.csv$", filenames[0]):
-                print("ExpDataReaderNPY.__init__: you provided csv data. Data will be parsed with pandas, and only numeric variables will be kept")
-                import pandas as pd
-                numerics = [
-                    'int16',
-                    'int32',
-                    'int64',
-                    'float16',
-                    'float32',
-                    'float64']
-
-                self.dataX = np.array(
-                    pd.read_csv(
-                        os.path.join(
-                            pathdata,
-                            filenames[0]),
-                        sep=";").select_dtypes(
-                        include=numerics))
-                self.dataY = np.array(
-                    pd.read_csv(
-                        os.path.join(
-                            pathdata,
-                            filenames[1]),
-                        sep=";").select_dtypes(
-                        include=numerics))
-            else:
-                raise RuntimeError(
-                    "ExpDataReaderNPY.__init__Impossible to read data of type {} -- make sure your file is a npy or a csv (sep=\";\") data or use another data reader class".format(filenames[0]))
-        else:
-            self.dataX = dataX
-            self.dataY = dataY
-
-        if self.nrowsX() != self._nrowsY():
-            raise RuntimeError(
-                "ExpDataReaderNPY.__init__: input data set and output data set have not the same number of rows.")
-        if self.ncolsX() == 0 or self.ncolsY() == 0:
-            raise RuntimeError(
-                "ExpDataReaderNPY.__init__: there are no columns in the data provided. Check that the data are numeric")
-
-        self.features_placeholder = tf.placeholder(
-            self.dataX.dtype, self.dataX.shape)
-        self.labels_placeholder = tf.placeholder(
-            self.dataY.dtype, self.dataY.shape)
-
-        self.dataset = tf.contrib.data.Dataset.from_tensor_slices(
-            (self.features_placeholder, self.labels_placeholder))
-        # [Other transformations on `dataset`...]
-        # dataset = ...
-        self.iterator = self.dataset.make_initializable_iterator()
-        self.input, self.output = self.iterator.get_next()
-
-    def init(self, sess):
-        """
-        Initialize the operator
-        :param sess:
-        :return:
-        """
-        sess.run(
-            self.iterator.initializer,
-            feed_dict={
-                self.features_placeholder: self.dataX,
-                self.labels_placeholder: self.dataY})
-
-
-class ExpCSVDataReader(ExpDataReader):
-    def __init__(self, train, batch_size, pathdata=".",
-                 filenames=("X.csv", "Y.csv"), sizes=(1, 1), num_thread=4,
-                 mX=None, sdX=None, mY=None, sdY=None):
-        """
-        :param train: if true concern the training set
-        :param batch_size: number of data to unpack each time
-        :param pathdata: path where the data are stored
-        :param filenames: names of the files with input data and output data
-        :param sizes: number of columns of the data in X and Y
-        :param num_thread: number of thread to read the data
-        :param mX: mean of X data set (used for validation instead -- of recomputing the mean)
-        :param mY: mean of Y data set (used for validation instead -- of recomputing the mean)
-        :param sdX: standard deviation of X data set (used for validation -- instead of recomputing the std)
-        :param sdY: standard deviation of Y data set (used for validation -- instead of recomputing the std)
-        """
-        ExpDataReader.__init__(self, train=train, batch_size=batch_size)
-        self.sizes = sizes
-
-        # TODO optimization: do not parse the file if you nrows (training set parsed 2 times)
-        # count the number of lines
-        if (mX is None) or (sdX is None):
-            fun_process = self._normalize
-        else:
-            fun_process = self._countlines
-        mX_, sdX_, self.nrows = fun_process(
-            path=pathdata, size=sizes[0], fn=filenames[0])
-        if (mX is None) or (sdX is None):
-            fun_process = self._normalize
-        else:
-            fun_process = self._countlines
-        mY_, sdY_, tmpN = fun_process(
-            path=pathdata, size=sizes[1], fn=filenames[1])
-
-        self.mX = tf.convert_to_tensor(
-            mX_, name="mean_X", dtype=tf.float32) if mX is None else mX
-        self.sdX = tf.convert_to_tensor(
-            sdX_, name="std_X", dtype=tf.float32) if sdX is None else sdX
-        self.mY = tf.convert_to_tensor(
-            mY_, name="mean_Y", dtype=tf.float32) if mY is None else mY
-        self.sdY = tf.convert_to_tensor(
-            sdY_, name="std_Y", dtype=tf.float32) if sdY is None else sdY
-
-        if tmpN != self.nrows:
-            raise RuntimeError(
-                "ExpCSVDataReader: the files {} and {} does not count the same number of lines".format(
-                    sizes[0], sizes[1]))
-
-        self.dataX = tf.contrib.data.TextLineDataset(
-            [os.path.join(pathdata, filenames[0])]).skip(1).map(
-            lambda line: self._parse_function(line, size=sizes[0], m=self.mX, std=self.sdX),
-            num_threads=num_thread,
-            output_buffer_size=num_thread * 5
-        )
-        self.dataY = tf.contrib.data.TextLineDataset(
-            [os.path.join(pathdata, filenames[1])]).skip(1).map(
-            lambda line: self._parse_function(line, size=sizes[1], m=self.mY, std=self.sdY),
-            num_threads=num_thread,
-            output_buffer_size=num_thread * 5
-        )
-
-        self.dataset = tf.contrib.data.Dataset.zip((self.dataX, self.dataY))
-        if train:
-            self.dataset = self.dataset.repeat(-1)
-            self.dataset = self.dataset.shuffle(buffer_size=10000)
-        else:
-            self.dataset = self.dataset.repeat(1)
-        self.dataset = self.dataset.batch(batch_size=batch_size)
-
-    def _normalize(self, path, size, fn):
-        """
-        Compute some statistics of the file fn.
-        fn should be a csv file with a coma separator, copntaining only float objects, with a single header line.
-        :param path: the path where the file is
-        :param size: dimension of the file (number of columns)
-        :param fn: the file name
-        :return: the mean, the standard deviation, and the number of rows
-        """
-        count = 0
-        acc = np.zeros(shape=(size))
-        acc2 = np.zeros(shape=(size))
-        with open(os.path.join(path, fn)) as fp:
-            fp.readline()  # do not parse the header
-            for (count, li) in enumerate(fp, 1):
-                spl = li.split(";")
-                acc += [float(el) for el in spl]
-                acc2 += [float(el) * float(el) for el in spl]
-        acc /= count
-        acc2 /= count
-        m = acc
-        std = np.sqrt(acc2 - acc * acc)
-        std[std <= 1e-3] = 1.
-        return m, std, count
-
-    def _countlines(self, path, size, fn):
-        """
-        Compute the number of rows of the file fn.
-        fn should be a csv file with a coma separator, copntaining only float objects, with a single header line.
-        :param path: the path where the file is
-        :param size: dimension of the file (number of columns)
-        :param fn: the file name
-        :return: the mean, the standard deviation, and the number of rows
-        """
-        count = 0
-        with open(os.path.join(path, fn)) as fp:
-            fp.readline()  # do not count the header
-            for (count, li) in enumerate(fp, 1):
-                pass
-        return 0., 1., count
-
-    def _nrows(self, array):
-        """
-        :param array: unused
-        :return: the number of rows in the training set
-        """
-        return self.nrows
-
-    def _parse_function(self, csv_row, size, m, std):
-        """
-        Read the data in the csv format
-        :param csv_row: the lines to parse
-        :param size: the number of columns
-        :param m: the mean over the whole data set
-        :param std: the standar deviation over the whole data set
-        :return:
-        """
-        # TODO make a cleaner version of preprocessing!
-        record_defaults = [[0.0] for _ in range(size)]
-        row = tf.decode_csv(
-            csv_row,
-            record_defaults=record_defaults,
-            field_delim=";")
-        row = row - m
-        row = row / std
-        return row
-
-    def _ncols(self, array):
-        """
-        :param array: tensorflow dataset object
-        :return: the number of variables of a parsed array
-        """
-        # pdb.set_trace()
-        return int(array.output_shapes[0])
-
-
-class ExpData:
-    def __init__(self, batch_size=50, sizemax=int(1e4),
-                 pathdata=".",
-                 classData=ExpDataReader,
-                 argsTdata=(), kwargsTdata={},
-                 argsVdata=(), kwargsVdata={},
-                 ):
-        """ The base class for every 'data' subclasses, depending on the problem
-        :param batch_size: the size of the minibatch
-        :param pathdata: the path where data are stored
-        :param sizemax: maximum size of data chunk that will be "fed" to the computation graph
-        :param classData: the class of data (should derive from 'ExpDataReader')
-        :param argsTdata: default arguments to build an instance of class 'expDataReader' (build the training data set)
-        :param kwargsTdata: keywords arguments to build an instance of class 'expDataReader' (build the training data set)
-        :param argsVdata: default arguments to build an instance of class 'expDataReader' (build the validation data set)
-        :param kwargsVdata: keywords arguments to build an instance of class 'expDataReader' (build the validation data set)
-        """
-        # the data for training (fitting the models parameters)
-        self.trainingData = classData(
-            pathdata=pathdata,
-            *argsTdata,
-            **kwargsTdata,
-            train=True,
-            batch_size=batch_size)
-        # get the values of means and standard deviation of the training set,
-        # to be use in the others sets
-        mX = self.trainingData.mX
-        mY = self.trainingData.mY
-        sdX = self.trainingData.sdX
-        sdY = self.trainingData.sdY
-        # the data for training (only used when reporting error on the whole
-        # set)
-        self.trainData = classData(
-            pathdata=pathdata,
-            *argsTdata,
-            **kwargsTdata,
-            train=False,
-            batch_size=sizemax,
-            mX=mX,
-            mY=mY,
-            sdX=sdX,
-            sdY=sdY)
-        # the data for validation set (fitting the models hyper parameters --
-        # only used when reporting error on the whole set)
-        self.valData = classData(
-            pathdata=pathdata,
-            *argsVdata,
-            **kwargsVdata,
-            train=False,
-            batch_size=sizemax,
-            mX=mX,
-            mY=mY,
-            sdX=sdX,
-            sdY=sdY)
-
-        self.size_in = self.trainData.ncolsX()
-        self.size_out = self.trainData.ncolsY()
-        self.sizemax = sizemax
-
-        self.iterator = tf.contrib.data.Iterator.from_structure(
-            self.trainData.dataset.output_types, self.valData.dataset.output_shapes)
-        self.next_input, self.next_output = self.iterator.get_next(
-            name="true_data")
-
-        self.training_init_op = self.iterator.make_initializer(
-            self.trainingData.dataset)
-        self.train_init_op = self.iterator.make_initializer(
-            self.trainData.dataset)
-        self.validation_init_op = self.iterator.make_initializer(
-            self.valData.dataset)
-
-    def getnrows(self):
-        """
-        :return: Number of row of the training set
-        """
-        return self.trainData.nrowsX()
-
-    def fancydescrption(self):
-        """
-        :return: A description for an instance of this data type
-        """
-        return "Standard data type"
-
-    def gettype(self):
-        """
-        :return: the type of data this is.
-        """
-        return "ExpData"
-
-    def getsizeoutX(self):
-        """
-        :return: the dimension of input vector (number of variables)
-        """
-        return self.trainData.ncolsX()
-
-    def getsizeoutY(self):
-        """
-        :return: the dimension of output vector (number of variables to predict)
-        """
-        return self.trainData.ncolsY()
-
-    def getnrowsval(self):
-        """
-        :return: Number of row of the validation set
-        """
-        return self.valData.nrowsX()
-
-    def computetensorboard(
-            self,
-            sess,
-            graph,
-            writers,
-            xval,
-            minibatchnum,
-            sum=False):
-        """
-        Compute and log (using writers) the errors on the training set and validation set
-        Return the error ON THE VALIDATION SET
-        :param sess: a tensorflow session
-        :param graph: an object of class ExpGraph
-        :param writers: an object of class ExpWriter
-        :param xval: the index value of the tensorboard run
-        :param minibatchnum: the number of minibatches computed
-        :param sum: if true make the sum of both losses, other return the error ON THE VALIDATION SET
-        :return: THE VALIDATION SET (except if sum is true)
-        """
-        valloss = np.NaN
-        # switch the reader to the the "train" dataset for reporting the
-        # training error
-        sess.run(self.train_init_op)
-        error_nan, trainloss = self.computetensorboard_aux(
-            sess=sess, graph=graph, writers=writers, xval=xval, dataset=self.trainData, minibatchnum=minibatchnum, train=True)
-        # switch the reader to the the "validation" dataset for reporting the
-        # training error
-        sess.run(self.validation_init_op)
-        if not error_nan:
-            error_nan, valloss = self.computetensorboard_aux(
-                sess=sess, graph=graph, writers=writers, xval=xval, dataset=self.valData, minibatchnum=minibatchnum, train=False)
-
-        if not sum:
-            res = valloss
-        else:
-            res = trainloss + valloss
-        sess.run(self.training_init_op)
-        return error_nan, res
-
-    def computetensorboard_aux(
-            self,
-            sess,
-            graph,
-            dataset,
-            writers,
-            xval,
-            minibatchnum,
-            train=True):
-        """
-        Compute the error on a whole data set.
-        Report the results in the text logger and in tensorboard.
-        Chunk of data of size at most 'self.sizemax' are fed in one "chunk"
-        :param sess: the tensorflow session
-        :param graph: the ExpGraph to be used for the comptuation
-        :param dataset: the dataset from which data are read
-        :param writers: the Expwriters to be used
-        :param xval: the 'x value' to be written in tensorboard
-        :param minibatchnum: the current number of minibatches
-        :param train: does it concern the training set
-        :return:
-        """
-        n = dataset.nrowsX()
-        acc_loss = 0.
-        error_nan = False
-        # pdb.set_trace()
-        while True:
-            # TODO GD here : check that the "huge batch" concern the same
-            # disconnected quad
-            try:
-                summary, loss_ = graph.run(
-                    sess, toberun=[
-                        graph.mergedsummaryvar, graph.loss])
-                if train:
-                    writers.tfwriter.trainwriter.add_summary(summary, xval)
-                else:
-                    writers.tfwriter.valwriter.add_summary(summary, xval)
-                acc_loss += loss_
-                error_nan = not np.isfinite(loss_)
-                if error_nan:
-                    break
-            except tf.errors.OutOfRangeError:
-                break
-        # pdb.set_trace()
-        name = "Train" if train else "Validation"
-        writers.logger.info(
-            "{} l2 error after {} minibatches : {}".format(
-                name, minibatchnum, acc_loss))
-        return error_nan, acc_loss
-
-    def computelasterror(self, sess, graph, logger, params, dict_summary, valSet=True, varsY=None):  # TODO
-        """
-        :param sess: a tensorflow session
-        :param graph: an object of type "ExpGraph" or one of its derivatives
-        :param logger: an object of class "ExpLogger" or one of its derivatives  #TODO ExpLogger
-        :param params: an object of class "ExpParams" or one of its derivatives  #TODO ExpParams
-        :param dict_summary: the summary to update, which will be written byt the "Experiment" class
-        :return: #TODO complete here a viable template of this function
-        """
-        return None, None
-
-    def combinerescompute(self, res, curr, toberun, indx=None):
-        """
-        Combines the previous results (in res) and the new one (in curr) to get the new one
-        :param res: previous results
-        :param curr: last results computed
-        :param toberun: what have been run
-        :param indx: on which part of the data
-        :return:
-        """
-        if toberun is None:
-            res += np.float32(curr)  # TODO false in case of mean for example!
-        else:
-            res[indx, :] = curr
-        return res
-
-    def initres(self, dataset, size=0):
-        """
-        Init the results structure to store the results of a forward pass on the whole 'dataset'
-        :param dataset: the data for which the resutls will be computed
-        :param size: the size you want (by default dataset.nrowsX()) [unused in this version]
-        :return:
-        """
-        init = np.ndarray(
-            (dataset.nrowsX(),
-             dataset.ncolsY()),
-            dtype="float32")
-        return init
-
-    def getpred(self, sess, graph, train=True):
-        """
-        return the prediction made by 'graph' on the data
-        :param sess: a tensorflow sessions
-        :param graph: an object of class ExpGraph, representing a comptuation graph / neural network
-        :param train: do you want to output the prediction on the traininset or on the validation set
-        :return:
-        """
-
-        dataset = self.trainData if train else self.valData
-        n = dataset.nrowsX()
-        n = int(n)
-
-        res = self.initres(dataset=dataset, size=0)
-
-        tmp = int(0)
-        self.comptime = 1.0
-        while tmp < n:
-            limit = int(np.min([tmp + self.sizemax, n]))
-            indx = [int(el) for el in range(tmp, limit)]
-
-            beg__ = datetime.datetime.now()
-            _, *dat = self.gettfbatch(newepoch=True,
-                                      dataset=dataset, indxs=indx)
-            end__ = datetime.datetime.now()
-            curr = graph.run(sess, toberun=graph.getoutput(), data=dat)
-            tmpTime = end__ - beg__
-            self.comptime += tmpTime.total_seconds()
-
-            res = self.combinerescompute(
-                res=res, curr=curr, toberun=graph.getoutput(), indx=indx)
-            tmp = limit
-        return res
-
-    def getinputs(self):
-        """
-        :return: The tensor of input data as well as its size
-        """
-        return self.next_input, int(self.trainData.dataset.output_shapes[0][1])
-
-    def getoutputs(self):
-        """
-        :return: The tensor of input data as well as its size
-        """
-        return self.next_output, int(
-            self.trainData.dataset.output_shapes[1][1])
-
-    def init(self, sess):
-        """
-        initialize the data if needed
-        :param sess:
-        """
-        sess.run(self.training_init_op)
-
-    def nextminibatch(self, minibatch_size=100):  # TODO
-        """
-        Return a new minibatch of training data
-        :param minibatch_size: the size of the minibatch you want to get
-        :return:
-        """
-        if minibatch_size == 0:
-            raise RuntimeError(
-                "StoredData.nextminibatch : you must ask at least one example")
-        if minibatch_size > self.getnrows():
-            raise RuntimeError(
-                "StoredData.nextminibatch :not enough data to have a minibatch this big")
-        return 0.0
-
-    def gettfbatch(self, indxs, dataset, newepoch=True):  # TODO
-        """
-        Return the data indexed by indxs of the training set (if train=True) or of the validation set (if not)
-        :param train:
-        :param indxs:
-        :return:
-        """
-        res = 0.
-        # res = dataset.get(indxs)
-        return newepoch, res
-
-    def computetensorboard_aux_with_feeddict(
-            self,
-            sess,
-            graph,
-            dataset,
-            writers,
-            xval,
-            minibatchnum,
-            train=True):
-        """
-        Compute the error on a whole data set.
-        Report the results in the text logger and in tensorboard.
-        Chunk of data of size at most 'self.sizemax' are fed in one "chunk"
-        :param sess: the tensorflow session
-        :param graph: the ExpGraph to be used for the comptuation
-        :param dataset: the dataset from which data are read
-        :param writers: the Expwriters to be used
-        :param xval: the 'x value' to be written in tensorboard
-        :param minibatchnum: the current number of minibatches
-        :param train: does it concern the training set
-        :return:
-        """
-        n = dataset.nrowsX()
-        n = int(n)
-        tmp = int(0)
-        acc_loss = 0.
-        error_nan = False
-        while tmp < n:
-            limit = int(np.min([tmp + self.sizemax, n]))
-            indx = [el for el in range(tmp, limit)]
-            # TODO GD here : check that the "huge batch" concern the same
-            # disconnected quad
-            _, *dat = self.gettfbatch(newepoch=True,
-                                      dataset=dataset, indxs=indx)
-
-            summary, loss_ = graph.run(
-                sess, toberun=[
-                    graph.mergedsummaryvar, graph.getloss], data=dat)
-            if train:
-                writers.tfwriter.trainwriter.add_summary(summary, xval)
-            else:
-                writers.tfwriter.valwriter.add_summary(summary, xval)
-            acc_loss += loss_
-            error_nan = not np.isfinite(loss_)
-            if error_nan:
-                break
-            tmp = limit
-        name = "Train" if train else "Validation"
-        writers.logger.info(
-            "{} l2 error after {} minibatches : {}".format(
-                name, minibatchnum, acc_loss))
-        return error_nan, acc_loss
-
-
 class ExpGraph:
-    def __init__(self, input, output, nnType=NNFully, argsNN=(), kwargsNN={}):
+    def __init__(self, data, var_x_name="input", var_y_name="output", nnType=NNFully, argsNN=(), kwargsNN={}):
         """The base class for every 'Graph' subclass to be use in with Experiment.
-        Basically, this represent the neural network.
-        :param inputs: the input of the graph (node in a tf computation graph + its size)
+        This class works only with one input variable, and one output variable.
+        Basically, this should represent the neural network.
+        :param data: the dictionnary of input tensor data (key=name, value=tensorflow tensor)
+        :param var_x_name: the name of the input variable
+        :param var_y_name: the name of the output variable
         :param nnType: the type of neural network to use
         :param args forwarded to the initializer of neural network
         :param kwargsNN: key word arguments forwarded to the initializer of neural network
         """
-        # TODO make the class NNFully directly a descendant of this class!
-        # no need to make self.nn here!
+
+        self.data = data  # the dictionnary of data pre-processed as produced by an ExpData instance
+        self.outputname = var_y_name  # name of the output variable, should be one of the key of self.data
+        self.intputname = var_x_name
+
         self.nn = nnType(
-            input=input[0],
-            outputsize=output[1],
+            input=data[var_x_name],
+            outputsize=int(data[var_y_name].get_shape()[1]),
             *argsNN,
             **kwargsNN)
         self.vars_out = self.nn.pred
+        self.data = data
 
         self.mergedsummaryvar = None
         self.loss = None
@@ -1020,36 +352,20 @@ class ExpGraph:
         :return:  the number of total free parameters of the neural network"""
         return self.nn.getnbparam()
 
-    def getflops(self):
+    def getflop(self):
         """
         flops are computed using formulas in https://mediatum.ub.tum.de/doc/625604/625604
-        it takes into account both multiplication and addition. Results are given for a minibatch of 1 example.
+        it takes into account both multiplication and addition.
+        Results are given for a minibatch of 1 example for a single forward pass.
         :return: the number of flops of the neural network build 
         """
-        return self.nn.getflops()
+        return self.nn.getflop()
 
-    def getnbparam(self):
-        """
-        :return:  the number of total free parameters of the neural network"""
-        return self.nn.getnbparam()
     def getoutput(self):
         """
         :return: The "last" node of the graph, that serves as output
         """
         return self.vars_out
-
-    def run_with_feeddict(self, sess, toberun, data=None):
-        """
-        Use the tensorflow session 'sess' to run the graph node 'toberun' with data 'data'
-        :param sess: a tensorflow session
-        :param toberun: a node in the tensorflow computation graph to be run...
-        :param data: the data set to be used.
-        :return:
-        """
-        fd = {}
-        for id, el in self.phs:  # TODO Here !!!
-            fd[el] = data[id]
-        return sess.run(toberun, feed_dict=fd)
 
     def run(self, sess, toberun):
         """
@@ -1078,6 +394,38 @@ class ExpGraph:
         """
         self.nn.initwn(sess=sess)
 
+    def get_true_output_tensor(self):
+        """
+        :return: the output data tensor (target of the optimizer)
+        """
+        return self.data[self.outputname]
+
+    def get_input_size(self):
+        """
+        
+        :return: the number of columns (variables) in input
+        """
+        return int(self.data[self.intputname].shape[1])
+
+    def get_output_size(self):
+        """
+
+        :return: the number of columns (variables) in input
+        """
+        return int(self.data[self.outputname].shape[1])
+
+    def run_with_feeddict(self, sess, toberun, data=None):
+        """
+        Use the tensorflow session 'sess' to run the graph node 'toberun' with data 'data'
+        :param sess: a tensorflow session
+        :param toberun: a node in the tensorflow computation graph to be run...
+        :param data: the data set to be used.
+        :return:
+        """
+        fd = {}
+        for id, el in self.phs:  # TODO Here !!!
+            fd[el] = data[id]
+        return sess.run(toberun, feed_dict=fd)
 
 class ExpSaverParam:
     def __init__(self,
@@ -1185,24 +533,24 @@ class ExpModel:
 
         # 2. build some important node: the inference, loss and optimizer node
         self.inference = tf.identity(graph.getoutput(), name="inference")
+        true_output_tensor = self.graph.get_true_output_tensor()
+        self.loss = None
         with tf.variable_scope("training_loss"):
             self.loss = self.lossfun(
-                data.getoutputs()[0] -
-                self.inference,
+                self.inference-true_output_tensor,
                 name="loss")
+
+        self.optimize=None
         with tf.variable_scope("optimizer"):
             self.optimize = optimizerClass(
                 **optimizerkwargs).minimize(loss=self.loss, name="optimizer")
 
         # 3. build the summaries that will be stored
         with tf.variable_scope("summaries"):
-            self.error = tf.add(
-                self.inference, -data.getoutputs()[0], name=netname + "error_diff")
-            self.error_abs = tf.abs(self.error)
-            self.l1_avg = tf.reduce_mean(
-                self.error_abs, name=netname + "l1_avg")
-            self.l2_avg = tf.reduce_mean(
-                self.error * self.error, name=netname + "l2_avg")
+            self.error = tf.add(self.inference, -true_output_tensor, name=netname + "error_diff")
+            self.error_abs = tf.abs(self.error, name=netname + "error_abs")
+            self.l1_avg = tf.reduce_mean( self.error_abs, name=netname + "l1_avg")
+            self.l2_avg = tf.reduce_mean(self.error * self.error, name=netname + "l2_avg")
             self.l_max = tf.reduce_max(self.error_abs, name=netname + "l_max")
 
             # add loss as a summary for training
@@ -1272,50 +620,6 @@ class ExpModel:
         timesaving = tmp.total_seconds()  # ellapsed time saving data, in seconds
 
         self.exp_params.minibatchnum += 1
-        # print(
-        #     "{:%H:%M:%S.%f} minibatchnum {}".format(
-        #         datetime.datetime.now(),
-        #         self.exp_params.minibatchnum))
-
-        return newepoch, is_error_nan, losscomputed, valloss, timedata, timeTrain, timesaving
-
-    def run_withfeed_dict(self, sess):
-        """
-        Run one single minibatch.
-        If it is time, store the error made on that minibatch
-        If it is time, store the error made on the training / validation set
-        :param sess: a tensorflow session to execute the computation
-        :return:
-        """
-        # 1. get the data
-        beg__ = datetime.datetime.now()
-        newepoch, * \
-            data_minibatch = self.data.nextminibatch(self.exp_params.batch_size)
-        end__ = datetime.datetime.now()
-        tmp = end__ - beg__
-        timedata = tmp.total_seconds()  # ellapsed time getting the data, in seconds
-
-        # 2. train the model
-        # TODO optim: make in one pass optimizer and storing minibatch info if
-        # any
-        beg__ = datetime.datetime.now()
-        self.graph.run(sess, toberun=self.optimize, data=data_minibatch)
-        end__ = datetime.datetime.now()
-        tmp = end__ - beg__
-        timeTrain = tmp.total_seconds()  # ellapsed time training the model, in seconds
-
-        # 3. store informations # TODO optim make it in one single pass above!
-        beg__ = datetime.datetime.now()
-        losscomputed, is_error_nan, valloss = self.explogger.logtf(minibatchnum=self.exp_params.minibatchnum,
-                                                                   graph=self.graph,
-                                                                   data=self.data,
-                                                                   data_minibatch=data_minibatch,
-                                                                   sess=sess)
-
-        end__ = datetime.datetime.now()
-        tmp = end__ - beg__
-        timesaving = tmp.total_seconds()  # ellapsed time saving data, in seconds
-
         return newepoch, is_error_nan, losscomputed, valloss, timedata, timeTrain, timesaving
 
     def saveTrainedNet(self, sess, valloss, minibatchnum):
@@ -1354,6 +658,45 @@ class ExpModel:
     def restoreTrainedNet(self, sess):  # TODO
         pass
 
+    def run_withfeed_dict(self, sess): #TODO in another class. Here it is for class with tensorflow dataset
+        """
+        Run one single minibatch.
+        If it is time, store the error made on that minibatch
+        If it is time, store the error made on the training / validation set
+        :param sess: a tensorflow session to execute the computation
+        :return:
+        """
+        # 1. get the data
+        beg__ = datetime.datetime.now()
+        newepoch, * \
+            data_minibatch = self.data.nextminibatch(self.exp_params.batch_size)
+        end__ = datetime.datetime.now()
+        tmp = end__ - beg__
+        timedata = tmp.total_seconds()  # ellapsed time getting the data, in seconds
+
+        # 2. train the model
+        # TODO optim: make in one pass optimizer and storing minibatch info if
+        # any
+        beg__ = datetime.datetime.now()
+        self.graph.run(sess, toberun=self.optimize, data=data_minibatch)
+        end__ = datetime.datetime.now()
+        tmp = end__ - beg__
+        timeTrain = tmp.total_seconds()  # ellapsed time training the model, in seconds
+
+        # 3. store informations # TODO optim make it in one single pass above!
+        beg__ = datetime.datetime.now()
+        losscomputed, is_error_nan, valloss = self.explogger.logtf(minibatchnum=self.exp_params.minibatchnum,
+                                                                   graph=self.graph,
+                                                                   data=self.data,
+                                                                   data_minibatch=data_minibatch,
+                                                                   sess=sess)
+
+        end__ = datetime.datetime.now()
+        tmp = end__ - beg__
+        timesaving = tmp.total_seconds()  # ellapsed time saving data, in seconds
+
+        return newepoch, is_error_nan, losscomputed, valloss, timedata, timeTrain, timesaving
+
 
 class ExpParams:
     def __init__(self, epochnum=1, batch_size=50):
@@ -1366,8 +709,7 @@ class Exp:
                  parameters,
                  dataClass=ExpData, dataargs=(), datakwargs={},
                  graphType=ExpGraph, graphargs=(), graphkwargs={},
-                 modelType=ExpModel, modelargs=(), modelkwargs={},
-
+                 modelType=ExpModel, modelargs=(), modelkwargs={}
                  ):
         """
         Build the experience.
@@ -1408,14 +750,13 @@ class Exp:
                 pathdata=parameters.pathdata,
                 *dataargs,
                 **datakwargs)
-        self.inputs, self.inputsize = self.data.getinputs()
-        self.outputs, self.outputsize = self.data.getoutputs()
+        # self.inputs, self.inputsize = self.data.getinputs()
+        # self.outputs, self.outputsize = self.data.getoutputs()
 
         # 2. build the graph
         self.graph = None
         with tf.variable_scope("neuralnetwork"):
-            self.graph = graphType(input=(self.inputs, self.inputsize),
-                                   output=(self.outputs, self.outputsize),
+            self.graph = graphType(data=self.data.getdata(),
                                    *graphargs, **graphkwargs)
 
         # 3. add the loss, optimizer and saver
@@ -1439,8 +780,6 @@ class Exp:
         self.timeTrain = 0  # total time spent to train the model
         self.timesaving = 0  # ellapsed time saving data, in seconds
         self.valloss = []  # the loss on the validation set
-
-        # 6. create the path
 
     def start(self):  # TODO log beginning, and graph restoring
         """
@@ -1504,17 +843,19 @@ class Exp:
         self.model.explogger.info(
             "Size of train : nsample {}, size_X {},size_Y {} ".format(
                 self.data.getnrows(),
-                self.data.getsizeoutX(),
-                self.data.getsizeoutY()))
+                self.graph.get_input_size(),
+                self.graph.get_output_size()))
         self.model.explogger.info(
             "Size of validation set : nsample {}, size_X {},size_Y {} ".format(
                 self.data.getnrowsval(),
-                self.data.getsizeoutX(),
-                self.data.getsizeoutY()))
+                self.graph.get_input_size(),
+                self.graph.get_output_size()))
 
         dict_summary = {}
         dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
-        dict_summary["flops"] = "{}".format(self.graph.getflops())
+        dict_summary["flop"] = "{}".format(self.graph.getflop())
+        dict_summary["get_input_size"] = "{}".format(self.graph.get_input_size())
+        dict_summary["get_output_size"] = "{}".format(self.graph.get_output_size())
         self.writesummaryExp(dict_summary)
 
     def logend(self, is_error_nan):
@@ -1544,8 +885,8 @@ class Exp:
         dict_summary["training_steps"] = self.trainingsteps
         dict_summary["data_getting_time"] = self.timedata
         dict_summary["data_saving_time"] = self.timesaving
-        dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
-        dict_summary["flops"] = "{}".format(self.graph.getflops())
+        # dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
+        # dict_summary["flops"] = "{}".format(self.graph.getflops())
 
         self.writesummaryExp(dict_summary)
 
@@ -1562,8 +903,8 @@ class Exp:
             dict_summary["training_steps"] += self.trainingsteps
             dict_summary["data_getting_time"] += self.timedata
             dict_summary["data_saving_time"] += self.timesaving
-            dict_summary["flops"] = "{}".format(self.graph.getflops())
-            dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
+            # dict_summary["flops"] = "{}".format(self.graph.getflops())
+            # dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
             # dict_summary["l1_val_loss"] += "{}".format(self.vallos[-1])
         else:
             dict_summary = {}
@@ -1572,9 +913,9 @@ class Exp:
             dict_summary["data_getting_time"] = self.timedata
             dict_summary["data_saving_time"] = self.timesaving
             dict_summary["l1_val_loss"] = "{}".format(self.valloss[-1])
-            dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
-            dict_summary["flops"] = "{}".format(self.graph.getflops())
-            dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
+            # dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
+            # dict_summary["flops"] = "{}".format(self.graph.getflops())
+            # dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
 
         self.writesummaryExp(dict_summary)
         self.model.saveTrainedNet(
@@ -1583,13 +924,23 @@ class Exp:
             valloss=self.valloss)
 
     def writesummaryExp(self, dict_summary):
-        with open(os.path.join(self.path, "summary.json"), "r") as f:
-            dict_saved = json.load(f)
-
-        with open(os.path.join(self.path, "summary.json"), "w") as f:
+        """
+        Update the files located at os.path.join(self.path, "summary.json")
+        with the information in dict_summary
+        :param dict_summary: [dictionnary] new informations for updating the reference file
+        :return: 
+        """
+        full_path = os.path.join(self.path, "summary.json")
+        if os.path.exists(full_path):
+            # get back previous item
+            with open(full_path, "r") as f:
+                dict_saved = json.load(f)
+        else:
+            dict_saved = {}
+        with open(full_path, "w") as f:
             for key, val in dict_summary.items():
                 dict_saved[key] = val
-            json.dump(dict_summary, f, sort_keys=True, indent=4)
+            json.dump(dict_saved, f, sort_keys=True, indent=4)
 
 
 if __name__ == "__main__":
