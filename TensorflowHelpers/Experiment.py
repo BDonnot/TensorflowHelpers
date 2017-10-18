@@ -484,6 +484,7 @@ class ExpSaverParam:
         self.name_exp_with_path = os.path.join(self.path, self.name_model)
         self.path_saver = os.path.join(self.name_exp_with_path, "TFInfo")
         self.num_epoch = num_epoch
+        self.total_minibatches = 0
 
     def initsizes(self, nrows):
         """
@@ -492,11 +493,11 @@ class ExpSaverParam:
         :return:
         """
         self.epochsize = nrows // self.batch_size  # number of minibatches per epoch
-        total_minibatches = self.epochsize * self.num_epoch  # total number of minibatches
+        self.total_minibatches = self.epochsize * self.num_epoch  # total number of minibatches
         # save the loss each "self.save_loss" minibatches
-        self.save_loss = total_minibatches // self.num_savings
-        self.save_minibatch_loss = total_minibatches // self.num_savings_minibatch
-        self.save_model = total_minibatches // self.num_savings_model
+        self.save_loss = self.total_minibatches // self.num_savings
+        self.save_minibatch_loss = self.total_minibatches // self.num_savings_minibatch
+        self.save_model = self.total_minibatches // self.num_savings_model
 
 
 class ExpModel:
@@ -620,6 +621,7 @@ class ExpModel:
         timesaving = tmp.total_seconds()  # ellapsed time saving data, in seconds
 
         self.exp_params.minibatchnum += 1
+        newepoch = self.exp_params.minibatchnum % self.exp_params.epochsize == 0
         return newepoch, is_error_nan, losscomputed, valloss, timedata, timeTrain, timesaving
 
     def saveTrainedNet(self, sess, valloss, minibatchnum):
