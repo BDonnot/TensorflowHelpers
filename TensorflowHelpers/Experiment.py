@@ -322,7 +322,9 @@ class ExpLogger:
 class ExpGraph:
     def __init__(self, data, var_x_name="input", var_y_name="output", nnType=NNFully, argsNN=(), kwargsNN={}):
         """The base class for every 'Graph' subclass to be use in with Experiment.
-        This class works only with one input variable, and one output variable.
+        
+        /!\ This class works only with one input variable, and one output variable. /!\
+        
         Basically, this should represent the neural network.
         :param data: the dictionnary of input tensor data (key=name, value=tensorflow tensor)
         :param var_x_name: the name of the input variable
@@ -333,15 +335,15 @@ class ExpGraph:
         """
 
         self.data = data  # the dictionnary of data pre-processed as produced by an ExpData instance
-        self.outputname = var_y_name  # name of the output variable, should be one of the key of self.data
-        self.intputname = var_x_name
+        self.outputname = (var_y_name,)  # name of the output variable, should be one of the key of self.data
+        self.intputname = (var_x_name,)
 
         self.nn = nnType(
             input=data[var_x_name],
             outputsize=int(data[var_y_name].get_shape()[1]),
             *argsNN,
             **kwargsNN)
-        self.vars_out = self.nn.pred
+        self.vars_out = {self.outputname[0]: self.nn.pred}
         self.data = data
 
         self.mergedsummaryvar = None
@@ -363,7 +365,7 @@ class ExpGraph:
 
     def getoutput(self):
         """
-        :return: The "last" node of the graph, that serves as output
+        :return: a dictionnray corresponding to the output variables. keys; variables names, values: the tensor of the forward pass
         """
         return self.vars_out
 
@@ -394,25 +396,25 @@ class ExpGraph:
         """
         self.nn.initwn(sess=sess)
 
-    def get_true_output_tensor(self):
+    def get_true_output_dict(self):
         """
-        :return: the output data tensor (target of the optimizer)
+        :return: the output data dictionnary. key: varname, value=true value of this data
         """
-        return self.data[self.outputname]
+        return {self.outputname[0]: self.data[self.outputname[0]]}
 
     def get_input_size(self):
         """
         
         :return: the number of columns (variables) in input
         """
-        return int(self.data[self.intputname].shape[1])
+        return int(self.data[self.intputname[0]].shape[1])
 
     def get_output_size(self):
         """
 
         :return: the number of columns (variables) in input
         """
-        return int(self.data[self.outputname].shape[1])
+        return int(self.data[self.outputname[0]].shape[1])
 
     def run_with_feeddict(self, sess, toberun, data=None):
         """
@@ -533,13 +535,16 @@ class ExpModel:
         self.exp_params.initsizes(self.data.getnrows())
 
         # 2. build some important node: the inference, loss and optimizer node
-        self.inference = tf.identity(graph.getoutput(), name="inference")
-        true_output_tensor = self.graph.get_true_output_tensor()
+        with tf.variable_scope("inference"):
+            self.inference = {k: tf.identity(v, name="{}".format(k)) for k,v in graph.getoutput().items()}
+            true_output_dict = self.graph.get_true_output_dict()
         self.loss = None
         with tf.variable_scope("training_loss"):
-            self.loss = self.lossfun(
-                self.inference-true_output_tensor,
-                name="loss")
+            self.losses = {k: self.lossfun(self.inference[k]-true_output_dict[k], name="training_loss_{}".format(k)) for k in self.inference.keys()}
+            self.loss = tf.constant(0., dtype=tf.float32)
+            for _, l in self.losses.items():
+                # TODO capability of having ponderated loss!
+                self.loss = self.loss + l
 
         self.optimize=None
         with tf.variable_scope("optimizer"):
@@ -548,30 +553,39 @@ class ExpModel:
 
         # 3. build the summaries that will be stored
         with tf.variable_scope("summaries"):
-            self.error = tf.add(self.inference, -true_output_tensor, name=netname + "error_diff")
-            self.error_abs = tf.abs(self.error, name=netname + "error_abs")
-            self.l1_avg = tf.reduce_mean( self.error_abs, name=netname + "l1_avg")
-            self.l2_avg = tf.reduce_mean(self.error * self.error, name=netname + "l2_avg")
-            self.l_max = tf.reduce_max(self.error_abs, name=netname + "l_max")
+            self.error = {}
+            self.error_abs = {}
+            self.error_abs = {}
+            self.l1_avg = {}
+            self.l2_avg = {}
+            self.l_max = {}
+            for var_output_name in self.inference.keys():
+                k = var_output_name
+                with tf.variable_scope("{}".format(var_output_name)):
+                    self.error[k] = tf.add(self.inference[k], -true_output_dict[k], name="{}_{}_error_diff".format(netname, k))
+                    self.error_abs[k] = tf.abs(self.error[k],  name="{}_{}_error_abs".format(netname, k))
+                    self.l1_avg[k] = tf.reduce_mean( self.error_abs[k],  name="{}_{}_l1_avg".format(netname, k))
+                    self.l2_avg[k] = tf.reduce_mean(self.error[k] * self.error[k],  name="{}_{}_l2_avg".format(netname, k))
+                    self.l_max[k] = tf.reduce_max(self.error_abs[k],  name="{}_{}_l_max".format(netname, k))
 
-            # add loss as a summary for training
-            sum0 = tf.summary.scalar(netname + "loss", self.loss)
-            sum1 = tf.summary.scalar(netname + "l1_avg", self.l1_avg)
-            sum2 = tf.summary.scalar(netname + "l2_avg", self.l2_avg)
-            sum3 = tf.summary.scalar(netname + "loss_max", self.l_max)
+                    # add loss as a summary for training
+                    sum0 = tf.summary.scalar(netname + "loss_{}_{}".format(netname, k), self.losses[k])
+                    sum1 = tf.summary.scalar(netname + "l1_avg_{}_{}".format(netname, k), self.l1_avg[k])
+                    sum2 = tf.summary.scalar(netname + "l2_avg_{}_{}".format(netname, k), self.l2_avg[k])
+                    sum3 = tf.summary.scalar(netname + "loss_max_{}_{}".format(netname, k), self.l_max[k])
 
-            self.mergedsummaryvar = tf.summary.merge([sum0, sum1, sum2, sum3])
+                    self.mergedsummaryvar = tf.summary.merge([sum0, sum1, sum2, sum3])
 
-            tf.add_to_collection(NAMESAVEDTFVARS, self.loss)
-            tf.add_to_collection(NAMESAVEDTFVARS, self.inference)
-            tf.add_to_collection(NAMESAVEDTFVARS, self.l1_avg)
-            tf.add_to_collection(NAMESAVEDTFVARS, self.l2_avg)
-            tf.add_to_collection(NAMESAVEDTFVARS, self.l_max)
+                    tf.add_to_collection(NAMESAVEDTFVARS, self.losses[k])
+                    tf.add_to_collection(NAMESAVEDTFVARS, self.inference[k])
+                    tf.add_to_collection(NAMESAVEDTFVARS, self.l1_avg[k])
+                    tf.add_to_collection(NAMESAVEDTFVARS, self.l2_avg[k])
+                    tf.add_to_collection(NAMESAVEDTFVARS, self.l_max[k])
 
-            tf.add_to_collection("LOSSFUNFully" + netname, self.loss)
-            tf.add_to_collection("OUTPUTFully" + netname, self.inference)
+                    tf.add_to_collection("LOSSFUNFully" + netname, self.losses[k])
+                    tf.add_to_collection("OUTPUTFully" + netname, self.inference[k])
 
-            self.graph.init(self.mergedsummaryvar, self.loss)
+        self.graph.init(self.mergedsummaryvar, self.loss)
 
         # 4. create the saver object
         self.explogger = ExpLogger(
@@ -659,6 +673,111 @@ class ExpModel:
 
     def restoreTrainedNet(self, sess):  # TODO
         pass
+
+    def computelasterror(self, sess, dict_summary=None):
+        """
+        Compute and store in the writers (tensorflow and text logger the last information about the experiment)
+        :param sess: a tensorflow session
+        :param dict_summary: the summary dictionnary to save other informations
+        :return: 
+        """
+
+        #TODO for now getpred takes a lot of RAM, maybe it is not necessary and it can be optimized
+        predicted, orig = self.data.getpred(sess=sess, graph=self.graph, varsname=self.graph.outputname)
+
+        for varname in orig.keys():
+            self.logfinalerror(varname, pred=predicted[varname], true=orig[varname], dict_summary=dict_summary)
+
+    def logfinalerror(self, varname, pred, true, dict_summary=None):
+        """
+        Log the final error (eg at the end of training) meaning that:
+            - comptue the error for the whole validation set (using pred and true array)
+            - log it in text file self.explogger.logger
+            - update the info in dict_summary
+        :param varname: the name of the variable concerned
+        :param pred: the predicted value for this varibale (numpy array)
+        :param true: the true value for this variable (numpy array)
+        :param dict_summary: a dictionary for logging the error
+        :return: 
+        """
+        error = pred - true
+        mean_abs_error = np.mean(np.abs(error))
+        mean_abs_val = np.mean(np.abs(true))
+        max_abs_val = np.max(np.abs(true))
+
+        if self.explogger.logger is not None:
+            self.explogger.logger.info("Final validation mean abs error for {} : {:.3f} ({:.1f}%)".format(
+                varname, mean_abs_error, mean_abs_error / mean_abs_val * 100))
+        max_error = np.max(np.abs(error))
+        if self.explogger.logger is not None:
+            self.explogger.logger.info("Max validation error for {} : {:.3f} ({:.3f} -- {:.1f}%)".format(
+                varname, max_error, max_error / mean_abs_val, max_error / max_abs_val * 100))
+            
+        a = np.full(shape=(1, true.shape[1]), fill_value=1.0)
+        threshold = np.maximum(np.mean(np.abs(true), axis=0) * 1e-3, a)
+        mean_rel_error = np.mean(np.abs(error[np.abs(true) >= threshold]) /
+                                 np.abs(true[np.abs(true) >= threshold]))
+        if self.explogger.logger is not None:
+            self.explogger.logger.info("Final validation mean relative error for {} : {:.3f}% ".format(
+                varname, mean_rel_error * 100))
+
+        max_rel_error = np.max(np.abs(error[np.abs(true) >= threshold] /
+                                      true[np.abs(true) >= threshold]))
+        if self.explogger.logger is not None:
+            self.explogger.logger.info("Final validation max relative error for {} : {:.3f}% ".format(
+                varname, max_rel_error * 100))
+        b = np.percentile(np.abs(true), 90, axis=0).reshape((1, true.shape[1]))
+        threshold = np.maximum(a, b)
+        mean_abs_error_high = np.mean(np.abs(error[np.abs(true) >= threshold])).astype(np.float32)
+        if self.explogger.logger is not None:
+            self.explogger.logger.info("Final validation mean abs error (abs values >= q_90) for {} : {:.3f} ".format(
+                varname, mean_abs_error_high))
+
+        mean_rel_error_high = np.mean(np.abs(error[np.abs(true) >= threshold] /
+                                             true[np.abs(true) >= threshold]))
+        if self.explogger.logger is not None:
+            self.explogger.logger.info("Final validation mean rel error (abs values >= q_90) for {} : {:.3f}% ".format(
+                varname, 100*mean_rel_error_high))
+
+        max_rel_error_high = np.max(np.abs(error[np.abs(true) >= threshold] /
+                                           true[np.abs(true) >= threshold]))
+        if self.explogger.logger is not None:
+            self.explogger.logger.info("Final validation max relative error (abs values >= q_90) for {} : {:.3f}% ".format(
+                varname, max_rel_error_high * 100))
+
+            self.explogger.logger.info("Mean (abs) value val set for {} : {:.3f}".format(varname, mean_abs_val))
+            self.explogger.logger.info("Std value val set for {} : {:.3f}".format(varname, np.std(true)))
+            self.explogger.logger.info("Max (abs) value val set for {} : {:.3f}".format(varname, max_abs_val))
+
+        if dict_summary is not None:
+            dict_summary[varname + "_mean_abs_error"] = "{}".format(mean_abs_error)
+            dict_summary[varname + "_mean_abs_error_pct"] = "{}".format(mean_abs_error / mean_abs_val * 100)
+
+            dict_summary[varname + "_max_abs_error"] = "{}".format(max_error)
+            dict_summary[varname + "_max_abs_error_pct"] = "{}".format(max_error / max_abs_val * 100)
+
+            dict_summary[varname + "_mean_rel_error"] = "{}".format(mean_rel_error)
+            dict_summary[varname + "_max_rel_error"] = "{}".format(max_rel_error)
+
+            dict_summary[varname + "_mean_value"] = "{}".format(mean_abs_val)
+            dict_summary[varname + "_max_value"] = "{}".format(max_abs_val)
+
+            dict_summary[varname + "_mean_abs_error_high"] = "{}".format(mean_abs_error_high)
+            dict_summary[varname + "_max_rel_error_high"] = "{}".format(max_rel_error_high)
+            # if params is not None:
+            #     dict_summary[varname + "_params"] = "{}".format(params[varname])
+
+        if self.explogger.logger is not None:
+            dummy_pred = true - np.mean(true, axis=0)
+            error = dummy_pred - true
+            mean_abs_error = np.mean(np.abs(error))
+            self.explogger.logger.info("Dummy pred (mean by dimension) MAE error (val set) for {} : {:.3f}".format(
+                varname, mean_abs_error))
+            threshold = np.maximum(np.mean(np.abs(true), axis=0) * 1e-3, a)
+            mean_rel_error = np.mean(np.abs(error[np.abs(true) >= threshold]) /
+                                     np.abs(true[np.abs(true) >= threshold]))
+            self.explogger.logger.info("Dummy pred (mean by dimension) MAPE (val set) for {} : {:.3f}%".format(
+                varname, mean_rel_error * 100))
 
     def run_withfeed_dict(self, sess): #TODO in another class. Here it is for class with tensorflow dataset
         """
@@ -802,6 +921,9 @@ class Exp:
         # 2. init the weight normalization, is needed
         self.graph.initwn(self.sess)
 
+        #TODO here
+        self.logend(False)
+
         # 4. launch the computation
         for epochnum in range(self.parameters.num_epoch):
             is_error_nan = self.runallminibatchesthisepoch()
@@ -880,15 +1002,12 @@ class Exp:
             self.valloss.append(valloss)
             self.saveTrainedNet()
 
-        self.transitComp, self.error_l1 = self.data.computelasterror(
-            sess=self.sess, graph=self.graph, logger=self.model.explogger, params=self.model.parameters, dict_summary=dict_summary)
+        self.model.computelasterror(sess=self.sess, dict_summary=dict_summary)
 
         dict_summary["training_time"] = self.timeTrain
         dict_summary["training_steps"] = self.trainingsteps
         dict_summary["data_getting_time"] = self.timedata
         dict_summary["data_saving_time"] = self.timesaving
-        # dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
-        # dict_summary["flops"] = "{}".format(self.graph.getflops())
 
         self.writesummaryExp(dict_summary)
 
@@ -905,9 +1024,6 @@ class Exp:
             dict_summary["training_steps"] += self.trainingsteps
             dict_summary["data_getting_time"] += self.timedata
             dict_summary["data_saving_time"] += self.timesaving
-            # dict_summary["flops"] = "{}".format(self.graph.getflops())
-            # dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
-            # dict_summary["l1_val_loss"] += "{}".format(self.vallos[-1])
         else:
             dict_summary = {}
             dict_summary["training_time"] = self.timeTrain
@@ -915,9 +1031,6 @@ class Exp:
             dict_summary["data_getting_time"] = self.timedata
             dict_summary["data_saving_time"] = self.timesaving
             dict_summary["l1_val_loss"] = "{}".format(self.valloss[-1])
-            # dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
-            # dict_summary["flops"] = "{}".format(self.graph.getflops())
-            # dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
 
         self.writesummaryExp(dict_summary)
         self.model.saveTrainedNet(
@@ -934,9 +1047,13 @@ class Exp:
         """
         full_path = os.path.join(self.path, "summary.json")
         if os.path.exists(full_path):
-            # get back previous item
-            with open(full_path, "r") as f:
-                dict_saved = json.load(f)
+            try:
+                # get back previous item
+                with open(full_path, "r") as f:
+                    dict_saved = json.load(f)
+            except:
+                # someone put a non json file at the given place, or the json is corrupted
+                dict_saved = {}
         else:
             dict_saved = {}
         with open(full_path, "w") as f:

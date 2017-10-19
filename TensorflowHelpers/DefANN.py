@@ -29,7 +29,6 @@ class DenseLayer:
         :param guided_dropconnect_mask: tensor of the mask matrix  #TODO 
         :param weight_normalization: do you use weight normalization (see https://arxiv.org/abs/1602.07868)
         :param keep_prob: a scalar tensor for dropout layer (None if you don't want to use it)
-        :return: the output after computation
         """
 
         nin_ = int(input.get_shape()[1])
@@ -103,6 +102,161 @@ class DenseLayer:
             if self.bias:
                 sess.run(tf.assign(self.b, -m_init*scale_init, name="weigth_normalization_init_b"))
 
+class ResidualBlock:
+    def __init__(self, input, size, relu=False, bias=True, guided_dropconnect_mask=None, weight_normalization=False, keep_prob=None):
+        """
+        for weight normalization see https://arxiv.org/abs/1602.07868
+        for counting the flops of operations see https://mediatum.ub.tum.de/doc/625604/625604
+        this block is insipired from https://arxiv.org/abs/1603.05027 :
+        X -> Bn(.) -> Relu(.) -> W * . -> Bn(.) -> Relu(.) -> W_2 * . -> X + .
+        with "." being the output of the previous computation
+        Bn() -> batch normalization (currently unused)
+        Relu(.) -> rectifier linear unit
+        * -> matrix product
+        
+        dropout (regular) is done at the end of the comptuation
+        
+        the number of input and number of output is the same. Size is just the intermediate size
+        
+        :param input: input of the layer 
+        :param size: layer size (number of layer after "X -> Bn(.) -> Relu(.) -> W * .")
+        :param relu: do you use relu ? (at the end, just before standard dropout)
+        :param bias: do you add bias ?
+        :param guided_dropconnect_mask: tensor of the mask matrix  #TODO 
+        :param weight_normalization: do you use weight normalization (see https://arxiv.org/abs/1602.07868)
+        :param keep_prob: a scalar tensor for dropout layer (None if you don't want to use it)
+        """
+        self.input = input
+        self.weightnormed = weight_normalization
+
+        self.res = input
+        self.flops = 0
+        self.nbparams = 0
+
+        # treating "-> Bn() -> Relu()"
+        if relu:
+            self.res = tf.nn.relu(self.res, name="first_relu")
+            self.flops += int(self.res.shape()[1])
+
+        #treating "-> W * . -> Bn(.) -> Relu(.)"
+        self.first_layer = DenseLayer(self.res, size, relu=True, bias=bias,
+                                     guided_dropconnect_mask=guided_dropconnect_mask,
+                                     weight_normalization=weight_normalization,
+                                     keep_prob=None)
+        self.flops += self.first_layer.flops
+        self.nbparams += self.first_layer.nbparams
+        self.res = self.first_layer.res
+
+        # treating "-> W_2 * . "
+        self.second_layer = DenseLayer(self.res, input.shape()[1], relu=False, bias=bias,
+                                       guided_dropconnect_mask=guided_dropconnect_mask,
+                                       weight_normalization=weight_normalization,
+                                       keep_prob=None)
+        self.flops += self.second_layer.flops
+        self.nbparams += self.second_layer.nbparams
+
+        # treating "-> X + ."
+        self.res = self.second_layer.res + input
+        self.flops += int(self.res.shape()[1])
+
+        if relu:
+            self.res = tf.nn.relu(self.res, name="applying_relu")
+            self.flops += size  # we consider relu of requiring 1 computation per number (one max)
+
+        if keep_prob is not None:
+            #TODO : copy pasted from DenseLayer
+            self.res = tf.nn.dropout(self.res, keep_prob=keep_prob, name="applying_dropout")
+            # we consider that generating random number count for 1 operation
+            self.flops += size  # generate the "size" real random numbers
+            self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
+            self.flops += size  # element wise multiplication with res
+
+
+    def initwn(self, sess, scale_init=1.0):
+        """
+        initialize the weight normalization as describe in https://arxiv.org/abs/1602.07868
+        don't do anything if the weigth normalization have not been "activated"
+        :param sess: the tensorflow session
+        :param scale_init: the initial scale
+        :return: nothing
+        """
+        if not self.weightnormed:
+            return
+
+        self.first_layer.initwn(sess=sess, scale_init=scale_init)
+        self.second_layer.initwn(sess=sess, scale_init=scale_init)
+
+
+class DenseBlock:
+    def __init__(self, input, relu=False, bias=True, guided_dropconnect_mask=None, weight_normalization=False,
+                 keep_prob=None, nblayer=2):
+        """
+        for weight normalization see https://arxiv.org/abs/1602.07868
+        for counting the flops of operations see https://mediatum.ub.tum.de/doc/625604/625604
+        
+        this block is insipired from 
+        https://www.researchgate./publication/306885833_Densely_Connected_Convolutional_Networks :
+        
+        dropout (regular) is done at the end of the comptuation
+        
+        the size of each layer should be the same. That's why there is no "sizes" parameter.
+        
+        :param input: input of the layer 
+        :param relu: do you use relu ? (at the end, just before standard dropout)
+        :param bias: do you add bias ?
+        :param guided_dropconnect_mask: tensor of the mask matrix  #TODO 
+        :param weight_normalization: do you use weight normalization (see https://arxiv.org/abs/1602.07868)
+        :param keep_prob: a scalar tensor for dropout layer (None if you don't want to use it)
+        :param nblayer: the number of layer in the dense block
+        """
+        self.input = input
+        self.weightnormed = weight_normalization
+        size = int(input.shape()[1])
+        self.res = input
+        self.flops = 0
+        self.nbparams = 0
+
+        self.layers = []
+        for i in range(nblayer):
+            tmp_layer = DenseLayer(self.res, size, relu=True, bias=bias,
+                                   guided_dropconnect_mask=guided_dropconnect_mask,
+                                   weight_normalization=weight_normalization,
+                                   keep_prob=None)
+            self.flops += tmp_layer.flops
+            self.nbparams += tmp_layer.nbparams
+            self.res = tmp_layer.res
+            with tf.variable_scope("short_connections_densely_connected"):
+                for l in self.layers:
+                    self.res = self.res + l.res
+                    self.flops += size
+            self.layers.append(tmp_layer)
+
+        if relu:
+            self.res = tf.nn.relu(self.res, name="applying_relu")
+            self.flops += size  # we consider relu of requiring 1 computation per number (one max)
+
+        if keep_prob is not None:
+            #TODO : copy pasted from DenseLayer
+            self.res = tf.nn.dropout(self.res, keep_prob=keep_prob, name="applying_dropout")
+            # we consider that generating random number count for 1 operation
+            self.flops += size  # generate the "size" real random numbers
+            self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
+            self.flops += size  # element wise multiplication with res
+
+    def initwn(self, sess, scale_init=1.0):
+        """
+        initialize the weight normalization as describe in https://arxiv.org/abs/1602.07868
+        don't do anything if the weigth normalization have not been "activated"
+        :param sess: the tensorflow session
+        :param scale_init: the initial scale
+        :return: nothing
+        """
+        if not self.weightnormed:
+            return
+        for l in self.layers:
+            l.initwn(sess=sess, scale_init=scale_init)
+
+
 class NNFully:
     def __init__(self, input, outputsize, layersizes=(100,), weightnorm=False, bias=True):
         """
@@ -123,7 +277,7 @@ class NNFully:
         # TODO
         reuse = False
         graphtoload = None
-        bias = True
+        # bias = True
 
         self.nb_layer = len(layersizes)
         self.layers = []
@@ -177,190 +331,6 @@ class NNFully:
         for el in self.layers:
             el.initwn(sess=sess)
         self.output.initwn(sess=sess)
-
-# class ResidualBlock:
-#     def __init__(self, input, params, bias=True, relu=True, numlayer="", k=None, reuse=None, graphtoload=None):
-#         """Compute the output of a fully connected layer with 'resNet'
-#         W.Relu(W_1.X+bias)+X
-#         NB : output same size ass input
-#         prev : the previous tensorflow object
-#         nIn : size of input
-#         nLayer : number of layer between the residual and the input
-#         nbVert : number of neurons per 'hidden' layer
-#         biais : add bias"""
-#
-#         # bellow: first resNet implementation
-#         # self.relu = relu
-#         # with tf.name_scope("resblock"+numlayer) as scope:
-#         #     self.w1 = ReluLayer(input, params, bias, numlayer="resblock"+numlayer+"w1", k=k)  # Relu(W_1.X+bias)
-#         #     parw = BrickParams(nin=params.nout, nout=params.nin)
-#         #     self.W = WeightBias(self.w1.out, parw, False, numlayer="resblock"+numlayer+"w", k=None)
-#         #
-#         #     if relu:
-#         #         self.out = tf.nn.relu(tf.add(self.W.z, input, name="directconn"), name="nonlinearity")
-#         #     else:
-#         #         self.out = tf.add(self.W.z, input, name="directconn")
-#
-#         # new resNet implementation (http://link.springer.com/chapter/10.1007/978-3-319-46493-0_38)
-#         # https://arxiv.org/pdf/1603.05027.pdf
-#         with tf.variable_scope("resblock" + numlayer, reuse=reuse):
-#             relu_imp = tf.nn.relu(input, name="relu_input")
-#             self.w1 = ReluLayer(relu_imp, params, bias, numlayer="resblock" + numlayer + "w1", k=k,
-#                                 reuse=reuse, graphtoload=graphtoload)  # Relu(W_1.X+bias)
-#             parw = BrickParams(nin=params.nout, nout=params.nin)
-#             with tf.variable_scope('layer' + "resblock" + numlayer + "w", reuse=reuse):
-#                 self.W = WeightBias(self.w1.out, parw, False, numlayer="resblock" + numlayer + "w",
-#                                     k=None, graphtoload=graphtoload)
-#             self.out = tf.add(self.W.z, input, name="directconn")
-#
-#     def getnbparam(self):
-#         return self.w1.getnbparam() + self.W.getnbparam()
-#
-#     def initlayerwn(self, sess, ph, data):
-#         with tf.variable_scope("init_wn_resblok"):
-#             tmp = self.w1.initlayerwn(sess, ph=ph, data=data)
-#             np.maximum(tmp, 0, tmp)  # the output of layers are relu
-#             data_tmp = copy.deepcopy(data)
-#             data_tmp[0] = tmp
-#             tmp = self.W.initlayerwn(sess=sess, ph=ph, data=data_tmp)
-#         return tmp + data[0]
-#
-# class MicrosoftResNet(TFNeuralNet):
-#     def __init__(self, par, ph, paramTypes=BrickParams, defineloss=True, netname="", reuse=None, graphtoload=None):
-#         """ Definition of the tensorflow graph
-#         for the "resNet" architecture
-#         1. Scale the input to have the proper size
-#         2. Stack residual block
-#         """
-#         TFNeuralNet.__init__(self, par, ph)
-#
-#         z = self.ph.input
-#         n = self.ph.nIn
-#         n_out = self.ph.nOut
-#         self.layers = []
-#         self.x_prime = None
-#         # scale inputs using linear model (if sizes does not match)
-#         if self.ph.nIn != self.ph.nOut:
-#             # number of inputs differs from number of output, I scale once, and afterwards use standard ResNet
-#             parX = BrickParams(nin=self.ph.nIn, nout=self.ph.nOut, weightnorm=par.params["weightnorm"])
-#             with tf.variable_scope("scaling", reuse=reuse):
-#                 self.x_prime = WeightBias(input=z, params=parX, bias=False, numlayer="_scale", graphtoload=graphtoload)
-#             z = self.x_prime.z
-#         else:
-#             z = self.ph.input
-#         parL = paramTypes(nin=n_out, nout=self.layer_size, weightnorm=par.params["weightnorm"])
-#         # stack residual layers
-#         for i in range(self.nb_layer-1):
-#             if self.ph.k is not None:
-#                 # Guided Dropout Case
-#                 if self.ph.samemat:
-#                     k = self.ph.k
-#                 else:
-#                     k = self.ph.k[i, :, :]
-#             else:
-#                 k = None
-#             new_layer = ResidualBlock(input=z, params=parL, bias=True, numlayer=str(i), k=k,
-#                                       reuse=reuse, graphtoload=graphtoload)
-#             self.layers.append(new_layer)
-#             z = new_layer.out
-#         parL = BrickParams(nin=n_out, nout=self.layer_size, weightnorm=par.params["weightnorm"])
-#         # the last layer (output of the network)
-#         self.output = ResidualBlock(input=z,
-#                                     params=parL,
-#                                     bias=True,
-#                                     relu=False,
-#                                     numlayer="_last",
-#                                     reuse=reuse,
-#                                     graphtoload=graphtoload)
-#         # the predictions
-#         with tf.variable_scope('Prediction'):
-#             self.pred = self.output.out
-#
-#         if defineloss:
-#             # define loss function
-#             with tf.variable_scope('Loss'):
-#                 if "l2lambda" in par.params:
-#                     self.loss_fun = tf.nn.l2_loss(self.ph.output - self.getoutput(), name="l2_loss")
-#                     for lay in self.layers:
-#                         self.loss_fun = tf.add(self.loss_fun,
-#                                                par.params["l2lambda"]*tf.add(tf.nn.l2_loss(lay.attrs.w),
-#                                                                              tf.nn.l2_loss(lay.attrs.b)))
-#                 else:
-#                     self.loss_fun = tf.nn.l2_loss(self.ph.output - self.getoutput(), name="l2_loss")
-#
-#             # define error
-#             with tf.variable_scope('Error'):
-#                 self.error = tf.add(self.pred, -self.ph.output, name=netname+"error_diff")
-#                 self.error_abs = tf.abs(self.error)
-#                 self.l1_avg = tf.reduce_mean(self.error_abs, name=netname+"l1_avg")
-#                 self.l2_avg = tf.reduce_mean(self.error * self.error, name=netname+"l2_avg")
-#                 self.l_max = tf.reduce_max(self.error_abs, name=netname+"l_max")
-#
-#             # add loss as a summary for training
-#             sum0 = tf.summary.scalar(netname+"loss", self.loss_fun)
-#             sum1 = tf.summary.scalar(netname+"l1_avg", self.l1_avg)
-#             sum2 = tf.summary.scalar(netname+"l2_avg", self.l2_avg)
-#             sum3 = tf.summary.scalar(netname+"loss_max", self.l_max)
-#
-#             self.mergedsummaryvar = tf.summary.merge([sum0, sum1, sum2, sum3])
-#
-#             tf.add_to_collection(NAMESAVEDTFVARS, self.loss_fun)
-#             tf.add_to_collection(NAMESAVEDTFVARS, self.pred)
-#             tf.add_to_collection(NAMESAVEDTFVARS, self.l1_avg)
-#             tf.add_to_collection(NAMESAVEDTFVARS, self.l2_avg)
-#             tf.add_to_collection(NAMESAVEDTFVARS, self.l_max)
-#
-#             tf.add_to_collection("LOSSFUNResNet"+netname, self.loss_fun)
-#             tf.add_to_collection("OUTPUTResNet"+netname, self.getoutput())
-#
-#     def getoutput(self):
-#         return self.output.out
-#
-#     def getlossfun(self):
-#         return self.loss_fun
-#
-#     def getlayersize(self):
-#         return self.layer_size
-#
-#     def run(self, sess, batch_in, batch_out, toberun=None):
-#         """ sess : tensorflow session
-#         batch_in : input data for current minibatch
-#         batch_out : output data for current minibatch
-#         toberun : tensorflow 'stuff' that need to be run
-#         """
-#         if toberun is None:
-#             toberun = self.getlossfun()
-#         feed_dict = {self.ph.input: batch_in, self.ph.output: batch_out}
-#         return sess.run(toberun, feed_dict=feed_dict)
-#
-#     def initwn(self, sess, data):
-#         # init weight normalization with resnet
-#         with tf.variable_scope("init_wn_resnet"):
-#             if self.ph.nIn != self.ph.nOut:
-#                 tmp = self.x_prime.initlayerwn(sess, ph=self.ph, data=data)
-#                 np.maximum(tmp, 0, tmp)  # the output of layers are relu
-#                 data[0] = tmp
-#             datatmp = copy.deepcopy(data)
-#             for id, layer in enumerate(self.layers):
-#                 # print(data[-1].shape)
-#                 if len(data[-1].shape) >=3:
-#                     # in this case there is different matrices for each layer
-#                     datatmp[-1] = data[-1][id, :, :]
-#                 tmp = layer.initlayerwn(sess, ph=self.ph, data=[datatmp[0], 0, datatmp[-1]] )
-#                 np.maximum(tmp, 0, tmp)  # the output of layers are relu
-#                 datatmp[0] = tmp
-#             tmp = self.output.initlayerwn(sess, ph=self.ph, data=datatmp)
-#         return tmp
-#
-#     def getnbparam(self):
-#         if self.ph.nIn != self.ph.nOut:
-#             res = self.x_prime.getnbparam()
-#         else:
-#             res = 0
-#         for layer in self.layers:
-#             res += layer.getnbparam()
-#         res += self.output.getnbparam()
-#         return res
 
 if __name__ == "__main__":
     # TODO : code some sort of test for guided dropout stuff

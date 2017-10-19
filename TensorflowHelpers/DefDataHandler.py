@@ -397,8 +397,8 @@ class ExpData:
             batch_size=batch_size)
         # get the values of means and standard deviation of the training set,
         # to be use in the others sets
-        ms = self.trainingData.ms
-        sds = self.trainingData.sds
+        self.ms = self.trainingData.ms
+        self.sds = self.trainingData.sds
         # the data for training (only used when reporting error on the whole
         # set)
         self.trainData = classData(pathdata=pathdata,
@@ -406,8 +406,8 @@ class ExpData:
                                    **kwargsTdata,
                                    train=False,
                                    batch_size=sizemax,
-                                   ms=ms,
-                                   sds=sds)
+                                   ms=self.ms,
+                                   sds=self.sds)
         # the data for validation set (fitting the models hyper parameters --
         # only used when reporting error on the whole set)
         self.valData = classData(pathdata=pathdata,
@@ -415,8 +415,8 @@ class ExpData:
                                  **kwargsVdata,
                                  train=False,
                                  batch_size=sizemax,
-                                 ms=ms,
-                                 sds=sds)
+                                 ms=self.ms,
+                                 sds=self.sds)
         self.sizemax = sizemax # size maximum of a "minibatch" eg the maximum number of examples that will be fed
         # at once for making a single forward computation
 
@@ -477,6 +477,7 @@ class ExpData:
         :param sum: if true make the sum of both losses, other return the error ON THE VALIDATION SET
         :return: THE VALIDATION SET (except if sum is true)
         """
+        # TODO why is it in data ?
         valloss = np.NaN
         # switch the reader to the the "train" dataset for reporting the
         # training error
@@ -521,6 +522,7 @@ class ExpData:
         :param train: does it concern the training set
         :return:
         """
+        # TODO why is it in data ?
         acc_loss = 0.
         error_nan = False
         while True:
@@ -546,16 +548,50 @@ class ExpData:
                 name, minibatchnum, acc_loss))
         return error_nan, acc_loss
 
-    def computelasterror(self, sess, graph, logger, params, dict_summary, valSet=True, varsY=None):  # TODO
+    def getpred(self, sess, graph, varsname):
         """
         :param sess: a tensorflow session
-        :param graph: an object of type "ExpGraph" or one of its derivatives
-        :param logger: an object of class "ExpLogger" or one of its derivatives  #TODO ExpLogger
-        :param params: an object of class "ExpParams" or one of its derivatives  #TODO ExpParams
-        :param dict_summary: the summary to update, which will be written byt the "Experiment" class
-        :return: #TODO complete here a viable template of this function
+        :param graph: an object of class 'ExpGraph' or one of its derivatives
+        :param the variable for which you want to do the comptuation
+        :return: the prediction for the validation test (rescaled, and "un preprocessed" (eg directly comparable to the original data) ) 
+        :return: the original data
+        :return: the predictions takes the form of a dictionnary k: name, value: value predicted
         """
-        return None, None
+        #TODO why is it in data ?
+        res = {k: np.zeros(shape=(self.valData.nrowsX(), int(self.ms[k].shape[0]))) for k in varsname}
+        orig = {k: np.zeros(shape=(self.valData.nrowsX(), int(self.ms[k].shape[0]))) for k in varsname}
+        sess.run(self.validation_init_op)
+        previous = 0
+        sds = sess.run(self.sds)
+        ms = sess.run(self.ms)
+        while True:
+            # TODO GD here : check that the "huge batch" concern the same
+            # TODO disconnected quad
+            try:
+                #TODO optim: do not compute irrelevant data, eg data not in varsname
+                # TODO it is done when calling self.true_data
+                preds = graph.run(sess, toberun=[graph.vars_out, self.true_data] )
+                size = 0
+                for k in res.keys():
+                    # getting the prediction
+                    tmp = preds[0][k]
+                    size = tmp.shape[0]
+                    # rescale it ("un preprossed it")
+                    tmp = tmp*sds[k]+ms[k]
+                    # storing it in res
+                    res[k][previous:(previous+size), :] = tmp
+
+                    tmp = preds[1][k]
+                    # rescale it ("un preprossed it")
+                    tmp = tmp * sds[k] + ms[k]
+                    # storing it in res
+                    orig[k][previous:(previous + size), :] = tmp
+
+                previous += size
+            except tf.errors.OutOfRangeError:
+                break
+        sess.run(self.training_init_op)
+        return res, orig
 
     def combinerescompute(self, res, curr, toberun, indx=None):
         """
@@ -690,7 +726,7 @@ class ExpData:
                 name, minibatchnum, acc_loss))
         return error_nan, acc_loss
 
-    def getpred(self, sess, graph, train=True):
+    def getpred_with_feeddict(self, sess, graph, train=True):
         """
         return the prediction made by 'graph' on the data
         :param sess: a tensorflow sessions
@@ -723,6 +759,12 @@ class ExpData:
                 res=res, curr=curr, toberun=graph.getoutput(), indx=indx)
             tmp = limit
         return res
+
+    def computelasterror(self, sess, graph, logger, params, dict_summary, valSet=True, varsY=None):  # TODO
+        """
+        Compute
+        """
+        return None, None
 
 
 # NOT CURRENTLY IMPLEMENTED!!!

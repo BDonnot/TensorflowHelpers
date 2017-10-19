@@ -32,8 +32,13 @@ if __name__ == "__main__":
         path_exp = "/home/bdonnot/Documents/PyHades2/Test"
 
         # define the experiment parameters
-        parameters = ExpSaverParam(name_exp="firstTestTFrecords", path=path_exp,
-                                   pathdata=pathdata)
+        parameters = ExpSaverParam(name_exp="firstTestTFrecords",
+                                   path=path_exp,
+                                   pathdata=pathdata,
+                                   num_epoch=1,
+                                   num_savings=1,
+                                   num_savings_minibatch=5,
+                                   num_savings_model=1)
         var_x_name = "prod_q"
         var_y_name = "prod_p"
         kwargsTdata = {"filename": "neighbours-test.tfrecord", "sizes": {var_x_name:54, var_y_name:54}, "num_thread": 2}
