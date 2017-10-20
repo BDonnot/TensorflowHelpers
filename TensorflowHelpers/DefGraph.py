@@ -5,7 +5,8 @@ import tensorflow as tf
 from .DefANN import NNFully
 
 class ExpGraphOneXOneY:
-    def __init__(self, data, var_x_name="input", var_y_name="output", nnType=NNFully, argsNN=(), kwargsNN={}):
+    def __init__(self, data, var_x_name="input", var_y_name="output", nnType=NNFully, argsNN=(), kwargsNN={},
+                 ):
         """The base class for every 'Graph' subclass to be use in with Experiment.
 
         /!\ This class works only with one input variable, and one output variable. /!\

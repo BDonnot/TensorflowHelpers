@@ -4,20 +4,10 @@ import pdb
 import numpy as np
 import tensorflow as tf
 
-# TODO same API for all blocl, using some king of parameter
-# TODO so that I do not have to recode everything for guided dropout
-# struct : nIn,nout,k for guided dropout, and nin,nout for standard net
-
-# TODO find coherence between "params" of the net, and params for the brick
-# TODO forward pass for initwn!
-
-
-# TODO remove the placeHolder and stuff like that from here,
-# TODO move it to another file
-# TODO remove the loss of the definition of the neural network.
 
 class DenseLayer:
-    def __init__(self, input, size, relu=False, bias=True, guided_dropconnect_mask=None, weight_normalization=False, keep_prob=None):
+    def __init__(self, input, size, relu=False, bias=True, guided_dropconnect_mask=None, weight_normalization=False,
+                 keep_prob=None, reload=True):
         """
         for weight normalization see https://arxiv.org/abs/1602.07868
         for counting the flops of operations see https://mediatum.ub.tum.de/doc/625604/625604
@@ -28,6 +18,7 @@ class DenseLayer:
         :param guided_dropconnect_mask: tensor of the mask matrix  #TODO 
         :param weight_normalization: do you use weight normalization (see https://arxiv.org/abs/1602.07868)
         :param keep_prob: a scalar tensor for dropout layer (None if you don't want to use it)
+        :param reload: do you want to initialize with reloaded values
         """
 
         nin_ = int(input.get_shape()[1])
@@ -36,18 +27,20 @@ class DenseLayer:
         self.input = input
         self.weightnormed = False
         self.bias = False
-
         self.w = tf.get_variable(name="weights_matrix",
                             shape=[nin_, size],
-                            initializer=tf.contrib.layers.xavier_initializer(dtype=tf.float32),
+                            # initializer=tf.contrib.layers.xavier_initializer(dtype=tf.float32),
+                            # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/weights_matrix:0"),
                             trainable=True)  # weight matrix
         self.nbparams += int(nin_ * size)
 
         if weight_normalization:
             self.weightnormed = True
-            self.g = tf.get_variable(shape=[size],
+            self.g = tf.get_variable(
+                shape=[size],
                                 name="weight_normalization_g",
-                                initializer=tf.constant_initializer(value=1.0, dtype="float32"),
+                                # initializer=tf.constant_initializer(value=1.0, dtype="float32"),
+                                # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/weight_normalization_g:0"),
                                 trainable=True)
             self.nbparams += int(size)
             self.scaled_matrix = tf.nn.l2_normalize(self.w, dim=0, name="weight_normalization_scaled_matrix")
@@ -64,8 +57,10 @@ class DenseLayer:
 
         if bias:
             self.bias = True
-            self.b = tf.get_variable(shape=[size],
-                                initializer=tf.constant_initializer(value=0.0, dtype="float32"),
+            self.b = tf.get_variable(
+                shape=[size],
+                                # initializer=tf.constant_initializer(value=0.0, dtype="float32"),
+                                # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/bias:0"),
                                 name="bias",
                                 trainable=True)
             self.nbparams += int(size)

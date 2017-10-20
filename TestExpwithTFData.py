@@ -100,6 +100,7 @@ if __name__ == "__main__":
                                                     "kwargsdata": {"filename": "neighbours-train.tfrecord"}},
                                   "n2_random": {"argsdata": (),
                                                  "kwargsdata": {"filename": "random-train.tfrecord"}},
-                                  }
+                                  },
+                     startfromscratch=True
                      )
         my_exp.start()

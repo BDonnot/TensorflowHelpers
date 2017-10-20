@@ -118,7 +118,8 @@ class ExpLogger:
             num_savings_minibatch,
             epochsize,
             saveEachEpoch,
-            otherinfo = {}):
+            otherinfo = {}
+    ):
         """
         Logger that will log the data in tensorboard as well as in a log file, to be used in the Experiment class.
         It will also have the possibility to save and restore tensorflow models
@@ -586,6 +587,14 @@ class ExpModel:
     def restoreTrainedNet(self, sess):  # TODO
         pass
 
+    def checkreloaded(self, sess):
+        """
+        Check that the model properly reloaded the weights
+        :param sess: 
+        :return: 
+        """
+        self.explogger.logtf(minibatchnum=0, graph=self.graph, data=self.data, sess=sess, forcesaving=True)
+
     def computelasterror(self, sess, dict_summary=None):
         """
         Compute and store in the writers (tensorflow and text logger the last information about the experiment)
@@ -731,19 +740,14 @@ class ExpModel:
         return newepoch, is_error_nan, losscomputed, valloss, timedata, timeTrain, timesaving
 
 
-class ExpParams:
-    def __init__(self, epochnum=1, batch_size=50):
-        self.num_epoch = epochnum
-        self.batchsize = batch_size
-
-
 class Exp:
     def __init__(self,
                  parameters,
                  dataClass=ExpData, dataargs=(), datakwargs={},
                  graphType=ExpGraphOneXOneY, graphargs=(), graphkwargs={},
                  modelType=ExpModel, modelargs=(), modelkwargs={},
-                 otherdsinfo= {}
+                 otherdsinfo= {},
+                 startfromscratch=False
                  ):
         """
         Build the experience.
@@ -763,6 +767,7 @@ class Exp:
         :param modelargs:
         :param modelkwargs:
         :param otherdsinfo:
+        :param startfromscratch: 
         """
 
         self.parameters = parameters
@@ -776,9 +781,10 @@ class Exp:
             print("The path {} already exists".format(self.path))
 
         # TODO
-        self.startfromscratch = True  # do I start the experiments from scratch
+        self.startfromscratch = startfromscratch  # do I start the experiments from scratch
 
         # 1. load the data
+        #TODO try to load the ms and sds from previous graph if self.startfromscratch is False
         self.data = None
         with tf.variable_scope("datareader"):
             self.data = dataClass(
@@ -786,14 +792,17 @@ class Exp:
                 otherdsinfo=otherdsinfo,
                 *dataargs,
                 **datakwargs)
-        # self.inputs, self.inputsize = self.data.getinputs()
-        # self.outputs, self.outputsize = self.data.getoutputs()
 
-        # 2. build the graph
+        # 2. build the graph or load the graph
+        # if not self.startfromscratch:
+        #     self.parameters.saver = tf.train.import_meta_graph(os.path.join(self.path, "TFInfo", "ModelTrained_best.meta"))
+        # else:
+        self.parameters.saver = None
         self.graph = None
         with tf.variable_scope("neuralnetwork"):
             self.graph = graphType(data=self.data.getdata(),
-                                   *graphargs, **graphkwargs)
+                                   *graphargs, **graphkwargs
+                                   )
 
         # 3. add the loss, optimizer and saver
         self.model = modelType(
@@ -825,15 +834,21 @@ class Exp:
         """
         is_error_nan = False
 
-        # log the beginning
-        self.logbeginning()
-
         # 1. init the variables
-        self.sess.run(tf.global_variables_initializer())
+        if self.startfromscratch:
+            # log the beginning
+            self.logbeginning()
+            self.sess.run(tf.global_variables_initializer())
+        else:
+            # get the value of the best variable saved
+            self.parameters.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
 
         # 3. init the data
         self.data.init(self.sess)
 
+        if not self.startfromscratch:
+            self.model.checkreloaded(self.sess)
+            pdb.set_trace()
         # 2. init the weight normalization, is needed
         self.graph.initwn(self.sess)
 
@@ -926,7 +941,7 @@ class Exp:
 
     def saveTrainedNet(self):
         """
-        Save the neural network and
+        Save the neural network and update the information in dict_summary on disk
         :return:
         """
         # TODO handle this cases!
@@ -974,106 +989,3 @@ class Exp:
                 dict_saved[key] = val
             json.dump(dict_saved, f, sort_keys=True, indent=4)
 
-
-if __name__ == "__main__":
-    from DataHandler import OnlineData, StoredData, OverFitData
-    path_IEEE = "/save"
-    path_scripts = "/home/bdonnot/Documents/RHades2"
-    path_scripts = "/home/benjamin/Documents/RHades2"
-    paths = Path(
-        path_data=os.path.join(
-            path_IEEE,
-            "ieee"),
-        path_IEEE=path_IEEE,
-        path_save=os.path.join(
-            path_scripts,
-            "PyHades2",
-            "modelSaved"),
-        path_scripts=path_scripts,
-        path_save_data=os.path.join(
-            path_scripts,
-            "PyHades2",
-            "BestResults"))
-    fileName = "ieee30_ADN.xml"
-
-    os.environ["GSR_TRACE_CONF"] = os.path.join(
-        paths.path_scripts, "dep/config/Trace.conf")
-    os.environ["GSR_PATH"] = os.path.join(paths.path_scripts, "dep/config/etc")
-
-    tested_params = [
-        {'batch_size': 150, 'nb_layer': 7, 'learning_rate': 0.001, 'layer_size': 10},
-        {'nb_layer': 9, 'layer_size': 30, 'batch_size': 15, 'learning_rate': 0.0004},
-        {'nb_layer': 6, 'layer_size': 45, 'batch_size': 15, 'learning_rate': 0.1},
-        {'nb_layer': 6, 'layer_size': 35, 'batch_size': 100, 'learning_rate': 0.01},
-        {'nb_layer': 6, 'layer_size': 25, 'batch_size': 5, 'learning_rate': 0.01},
-        {'nb_layer': 9, 'layer_size': 25, 'batch_size': 100, 'learning_rate': 0.1},
-        {'nb_layer': 5, 'layer_size': 40, 'batch_size': 40, 'learning_rate': 0.0002},
-        {'nb_layer': 1, 'layer_size': 35, 'batch_size': 50, 'learning_rate': 0.001},
-        {'nb_layer': 4, 'layer_size': 30, 'batch_size': 20, 'learning_rate': 0.0008},
-        {'nb_layer': 5, 'layer_size': 30, 'batch_size': 40, 'learning_rate': 0.03},
-        {'nb_layer': 9, 'layer_size': 40, 'batch_size': 10, 'learning_rate': 0.01},
-        {'nb_layer': 9, 'layer_size': 40, 'batch_size': 50, 'learning_rate': 0.0002},
-        {'nb_layer': 9, 'layer_size': 20, 'batch_size': 15, 'learning_rate': 0.0006},
-        {'nb_layer': 9, 'layer_size': 10, 'batch_size': 50, 'learning_rate': 0.0006},
-        {'nb_layer': 5, 'layer_size': 15, 'batch_size': 50, 'learning_rate': 0.0008},
-        {'nb_layer': 8, 'layer_size': 15, 'batch_size': 1, 'learning_rate': 0.0001},
-        {'nb_layer': 3, 'layer_size': 35, 'batch_size': 100, 'learning_rate': 0.0006},
-        {'nb_layer': 5, 'layer_size': 50, 'batch_size': 5, 'learning_rate': 0.0001},
-        {'nb_layer': 1, 'layer_size': 20, 'batch_size': 15, 'learning_rate': 0.0004},
-        {'nb_layer': 6, 'layer_size': 60, 'batch_size': 100, 'learning_rate': 0.03},
-        {'nb_layer': 4, 'layer_size': 30, 'batch_size': 15, 'learning_rate': 0.0008},
-        {'nb_layer': 7, 'layer_size': 60, 'batch_size': 20, 'learning_rate': 0.03},
-        {'nb_layer': 4, 'layer_size': 45, 'batch_size': 20, 'learning_rate': 0.001},
-        {'nb_layer': 9, 'layer_size': 30, 'batch_size': 40, 'learning_rate': 0.0001},
-        {'nb_layer': 1, 'layer_size': 35, 'batch_size': 5, 'learning_rate': 0.001},
-        {'nb_layer': 7, 'layer_size': 50, 'batch_size': 20, 'learning_rate': 0.001},
-        {'nb_layer': 3, 'layer_size': 15, 'batch_size': 1, 'learning_rate': 0.0006}
-    ]
-
-    random.seed(42)
-
-    ONLINE = False
-    if ONLINE:
-        import reseauADN
-        num_core = 4
-        n_eval = 1000
-        fIn = os.path.join(paths.path_data, fileName)
-        net = reseauADN.Reseau_Base(fIn)
-        data = OnlineData(net, num_core=num_core)
-        # generate (or get) a testing set
-        # that will be used during the experiment
-        # to compute the error
-        plouf = data.valdata(size=n_eval, last=False)
-        plouf = data.traindata(size=n_eval, last=False)
-    else:
-        data = StoredData(
-            os.path.join(
-                path_scripts,
-                "PyHades2",
-                "ampsdatareal"))
-        # data = StoredData(os.path.join(path_scripts, "PyHades2", "intensityData"))
-        # data = OverFitData(os.path.join(path_scripts, "PyHades2", "ampsdatareal"),
-        #                   size=50)
-
-    for par in tested_params[14:25]:
-        params = ParamsIEEE()
-        params.init_fromdict(par)
-        print(params)
-        # print(par)
-        exp = OldExperience(paths=paths,
-                            params=params,
-                            graphType=MicrosoftResNet,
-                            # TFGraphFully,#TFGraphFullyWithDec,#MicrosoftResNet,
-                            data=data,
-                            js=20,
-                            ks=300,  # 180000,#it seems enough #ks=3000000, #to compare with old methods
-                            # experimentaly, ks = 180 000 is enough when MicrosoftResNet/AdamOptimizer is used. Often the error afterwards increase
-                            # ks is deprecated, use js (equiv to epochnum instead)
-                            online=ONLINE,
-                            num_eval_error=1,
-                            num_eval_last_error=250,
-                            fileName=fileName,
-                            optimizer=tf.train.AdamOptimizer)  # tf.train.RMSPropOptimizer)
-
-        # print(TFGraphFully.__name__)
-        exp.run_withoutLr(startAgain=True, computeAll=True)  # ,oldmethod=True)
