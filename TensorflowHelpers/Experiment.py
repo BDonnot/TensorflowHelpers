@@ -17,6 +17,7 @@ import tensorflow as tf
 
 from .DefANN import NNFully
 from .DefDataHandler import ExpData
+from .DefGraph import ExpGraphOneXOneY
 
 TRAINING_COLLECTION_NAME = "train_op"
 NAMESAVEDTFVARS = 'savedvars'
@@ -161,7 +162,7 @@ class ExpLogger:
         """
         Compute the validation set error, and the training set error and the minibatch error, and store them in tensorboard
         :param minibatchnum: current number of minibatches proccessed
-        :param graph: an object of class 'ExpGraph' or one of its derivatives
+        :param graph: an object of class 'ExpGraphOneXOneY' or one of its derivatives
         :param data: an object of class 'ExpData' or one of its derivatives
         :param sess: a tensorflow session to execute the code
         :param forcesaving: do you want to save this data absolutely ?
@@ -224,7 +225,7 @@ class ExpLogger:
         """
         Compute the validation set error, and the training set error and the minibatch error, and store them in tensorboard
         :param minibatchnum: current number of minibatches proccessed
-        :param graph: an object of class 'ExpGraph' or one of its derivatives
+        :param graph: an object of class 'ExpGraphOneXOneY' or one of its derivatives
         :param data: an object of class 'ExpData' or one of its derivatives
         :param data_minibatch: #TODO
         :param sess: a tensorflow session to execute the code
@@ -319,116 +320,6 @@ class ExpLogger:
         self.tfwriter.saver.restore(sess, os.path.join(path, name))
 
 
-class ExpGraph:
-    def __init__(self, data, var_x_name="input", var_y_name="output", nnType=NNFully, argsNN=(), kwargsNN={}):
-        """The base class for every 'Graph' subclass to be use in with Experiment.
-        
-        /!\ This class works only with one input variable, and one output variable. /!\
-        
-        Basically, this should represent the neural network.
-        :param data: the dictionnary of input tensor data (key=name, value=tensorflow tensor)
-        :param var_x_name: the name of the input variable
-        :param var_y_name: the name of the output variable
-        :param nnType: the type of neural network to use
-        :param args forwarded to the initializer of neural network
-        :param kwargsNN: key word arguments forwarded to the initializer of neural network
-        """
-
-        self.data = data  # the dictionnary of data pre-processed as produced by an ExpData instance
-        self.outputname = (var_y_name,)  # name of the output variable, should be one of the key of self.data
-        self.intputname = (var_x_name,)
-
-        self.nn = nnType(
-            input=data[var_x_name],
-            outputsize=int(data[var_y_name].get_shape()[1]),
-            *argsNN,
-            **kwargsNN)
-        self.vars_out = {self.outputname[0]: self.nn.pred}
-        self.data = data
-
-        self.mergedsummaryvar = None
-        self.loss = None
-
-    def getnbparam(self):
-        """
-        :return:  the number of total free parameters of the neural network"""
-        return self.nn.getnbparam()
-
-    def getflop(self):
-        """
-        flops are computed using formulas in https://mediatum.ub.tum.de/doc/625604/625604
-        it takes into account both multiplication and addition.
-        Results are given for a minibatch of 1 example for a single forward pass.
-        :return: the number of flops of the neural network build 
-        """
-        return self.nn.getflop()
-
-    def getoutput(self):
-        """
-        :return: a dictionnray corresponding to the output variables. keys; variables names, values: the tensor of the forward pass
-        """
-        return self.vars_out
-
-    def run(self, sess, toberun):
-        """
-        Use the tensorflow session 'sess' to run the graph node 'toberun' with data 'data'
-        :param sess: a tensorflow session
-        :param toberun: a node in the tensorflow computation graph to be run...
-        :return:
-        """
-        return sess.run(toberun)
-
-    def init(self, mergedsummaryvar, loss):
-        """
-        Assign the summary 'mergedsummaryvar' for easier access
-        :param mergedsummaryvar: the summary of everything to be save by tensorboard
-        :param loss: the loss tensor use for training
-        :return:
-        """
-        self.mergedsummaryvar = mergedsummaryvar
-        self.loss = loss
-
-    def initwn(self, sess):
-        """
-        Initialize the weights for weight normalization
-        :param sess: a tensorflow session
-        :return: 
-        """
-        self.nn.initwn(sess=sess)
-
-    def get_true_output_dict(self):
-        """
-        :return: the output data dictionnary. key: varname, value=true value of this data
-        """
-        return {self.outputname[0]: self.data[self.outputname[0]]}
-
-    def get_input_size(self):
-        """
-        
-        :return: the number of columns (variables) in input
-        """
-        return int(self.data[self.intputname[0]].shape[1])
-
-    def get_output_size(self):
-        """
-
-        :return: the number of columns (variables) in input
-        """
-        return int(self.data[self.outputname[0]].shape[1])
-
-    def run_with_feeddict(self, sess, toberun, data=None):
-        """
-        Use the tensorflow session 'sess' to run the graph node 'toberun' with data 'data'
-        :param sess: a tensorflow session
-        :param toberun: a node in the tensorflow computation graph to be run...
-        :param data: the data set to be used.
-        :return:
-        """
-        fd = {}
-        for id, el in self.phs:  # TODO Here !!!
-            fd[el] = data[id]
-        return sess.run(toberun, feed_dict=fd)
-
 class ExpSaverParam:
     def __init__(self,
                  path=".",
@@ -511,17 +402,17 @@ class ExpModel:
                  netname=""):
         """ init the model with hyper-parameters etc
         add the loss and the optimizer to the pure definition of the neural network.
-        The NN is defined by ExpGraph.
+        The NN is defined by ExpGraphOneXOneY.
         Here the saver / restorer is defined as well.
         :param exp_params: an object of class ExpSaverParam
         # :param input: a list of input placeholder, obtained from ExpData  #TODO
         # :param output: a list of outputs placeholder, obtained from ExpData  #TODO
         :param data: an object of class ExpData or one of its derivative. The data used for the computation
-        :param graph: an object of class ExpGraph or one of its derivative. The NN used for the computation.
+        :param graph: an object of class ExpGraphOneXOneY or one of its derivative. The NN used for the computation.
         :param lossfun: the loss function to use
         :param optimizerClass: the class optimizer to use (tf.train.optimizer)
         :param optimizerkwargs: the key-words arguments to build the optimizer. You can pass the learning rate here.
-        # :param graphType: the type of "ExpGraph" to use
+        # :param graphType: the type of "ExpGraphOneXOneY" to use
         # :param pars: the dictionnary of hyper parameters of the mdoels
         """
 
@@ -829,14 +720,14 @@ class Exp:
     def __init__(self,
                  parameters,
                  dataClass=ExpData, dataargs=(), datakwargs={},
-                 graphType=ExpGraph, graphargs=(), graphkwargs={},
+                 graphType=ExpGraphOneXOneY, graphargs=(), graphkwargs={},
                  modelType=ExpModel, modelargs=(), modelkwargs={}
                  ):
         """
         Build the experience.
         Meaning that it will
         first build the data from what you give (dataClass, dataargs and datakwargs)
-        Then build the neural networks with ExpGraph, graphargs, graphkwargs
+        Then build the neural networks with ExpGraphOneXOneY, graphargs, graphkwargs
         Then build the comptuation graph (add the loss, savers etc.) : modelType, modelargs, modelkwargs
         Then open a tensorflow session
         :param parameters:
@@ -920,9 +811,6 @@ class Exp:
 
         # 2. init the weight normalization, is needed
         self.graph.initwn(self.sess)
-
-        #TODO here
-        self.logend(False)
 
         # 4. launch the computation
         for epochnum in range(self.parameters.num_epoch):
