@@ -64,6 +64,7 @@ class ExpCSVDataReader(ExpDataReader):
         :param pathdata: path where the data are stored
         :param filenames: names of the files with input data and output data [should be a 2 keys dictionnaries with keys "input" and "output"]
         :param sizes: number of columns of the data in X and Y [should be a 2 keys dictionnaries with keys "input" and "output"]
+        :param other_dataset: other files (same format as
         :param num_thread: number of thread to read the data
         :param ms: means of X data set (used for validation instead -- of recomputing the mean)
         :param sds: standard deviation of Y data set (used for validation -- instead of recomputing the std)
@@ -102,6 +103,8 @@ class ExpCSVDataReader(ExpDataReader):
         else:
             self.dataset = self.dataset.repeat(1)
         self.dataset = self.dataset.batch(batch_size=batch_size)
+
+
 
     def _normalize(self, path, sizes, fns):
         """
@@ -270,15 +273,16 @@ class ExpTFrecordsDataReader(ExpDataReader):
 
     def _countlines(self, path, fn, sizes):
         """
-        
-        :param path: 
-        :param fn: 
-        :return: 
+        :param path: the path where data are located
+        :param fn: the file name
+        :return: the number of lines of the files (must iterate through it line by line) 
         """
-        ms = {el:0. for el in sizes}
-        sds = {el:0. for el in sizes}
+        ms = {el: 0. for el in sizes}
+        sds = {el: 0. for el in sizes}
         nb = 0
         fn_ = os.path.join(path, fn)
+        # print(fn)
+        # print(fn_)
         for nb, record in enumerate(tf.python_io.tf_record_iterator(fn_)):
             pass
         # don't forget to add 1 because python start at 0!
@@ -286,7 +290,6 @@ class ExpTFrecordsDataReader(ExpDataReader):
 
     def _parse_function(self, example_proto, sizes, ms, stds):
         """
-        
         :param example_proto: 
         :param sizes: 
         :param ms: 
@@ -374,25 +377,29 @@ class ExpData:
     def __init__(self, batch_size=50, sizemax=int(1e4),
                  pathdata=".",
                  classData=ExpDataReader,
+                 sizes={"input":1, "output":1},
                  argsTdata=(), kwargsTdata={},
                  argsVdata=(), kwargsVdata={},
-
+                    otherdsinfo = {}
                  ):
         """ The base class for every 'data' subclasses, depending on the problem
         :param batch_size: the size of the minibatch
         :param pathdata: the path where data are stored
         :param sizemax: maximum size of data chunk that will be "fed" to the computation graph
         :param classData: the class of data (should derive from 'ExpDataReader')
+        :param sizes: the sizes (number of columns) of each dataset
         :param argsTdata: default arguments to build an instance of class 'expDataReader' (build the training data set)
         :param kwargsTdata: keywords arguments to build an instance of class 'expDataReader' (build the training data set)
         :param argsVdata: default arguments to build an instance of class 'expDataReader' (build the validation data set)
         :param kwargsVdata: keywords arguments to build an instance of class 'expDataReader' (build the validation data set)
+        :param otherdsinfo : dictionnaries of keys = dataset name, values = dictionnaries of keys: "argsdata" : tuple, kwargsdata: dictionnaries
         """
         # the data for training (fitting the models parameters)
         self.trainingData = classData(
             pathdata=pathdata,
             *argsTdata,
             **kwargsTdata,
+            sizes=sizes,
             train=True,
             batch_size=batch_size)
         # get the values of means and standard deviation of the training set,
@@ -404,6 +411,7 @@ class ExpData:
         self.trainData = classData(pathdata=pathdata,
                                    *argsTdata,
                                    **kwargsTdata,
+                                   sizes=sizes,
                                    train=False,
                                    batch_size=sizemax,
                                    ms=self.ms,
@@ -413,6 +421,7 @@ class ExpData:
         self.valData = classData(pathdata=pathdata,
                                  *argsVdata,
                                  **kwargsVdata,
+                                 sizes=sizes,
                                  train=False,
                                  batch_size=sizemax,
                                  ms=self.ms,
@@ -433,6 +442,20 @@ class ExpData:
             self.trainData.dataset)
         self.validation_init_op = self.iterator.make_initializer(
             self.valData.dataset)
+
+        self.otherdatasets = {}
+        self.otheriterator_init = {}
+        for otherdsname, values in otherdsinfo.items():
+            self.otherdatasets[otherdsname] = classData(pathdata=pathdata,
+                                                        *values["argsdata"],
+                                                        **values["kwargsdata"],
+                                                        sizes=sizes,
+                                                        train=False,
+                                                        batch_size=sizemax,
+                                                        ms=self.ms,
+                                                        sds=self.sds
+                                                        )
+            self.otheriterator_init[otherdsname] = self.iterator.make_initializer(self.otherdatasets[otherdsname].dataset)
 
     def getnrows(self):
         """
@@ -483,15 +506,15 @@ class ExpData:
         # training error
         sess.run(self.train_init_op)
         error_nan, trainloss = self.computetensorboard_aux(
-            sess=sess, graph=graph, writers=writers, xval=xval,
-            dataset=self.trainData, minibatchnum=minibatchnum, train=True)
+            sess=sess, graph=graph, writer=writers.tfwriter.trainwriter, xval=xval,
+            minibatchnum=minibatchnum, train=True, name="Train", textlogger=writers.logger)
         # switch the reader to the the "validation" dataset for reporting the
         # training error
         sess.run(self.validation_init_op)
         if not error_nan:
             error_nan, valloss = self.computetensorboard_aux(
-                sess=sess, graph=graph, writers=writers, xval=xval,
-                dataset=self.valData, minibatchnum=minibatchnum, train=False)
+                sess=sess, graph=graph, writer=writers.tfwriter.valwriter, xval=xval,
+                minibatchnum=minibatchnum, train=False, name="Validation", textlogger=writers.logger)
 
         if not sum:
             res = valloss
@@ -504,8 +527,9 @@ class ExpData:
             self,
             sess,
             graph,
-            dataset,
-            writers,
+            writer,
+            textlogger,
+            name,
             xval,
             minibatchnum,
             train=True):
@@ -515,8 +539,9 @@ class ExpData:
         Chunk of data of size at most 'self.sizemax' are fed in one "chunk"
         :param sess: the tensorflow session
         :param graph: the ExpGraph to be used for the comptuation
-        :param dataset: the dataset from which data are read
-        :param writers: the Expwriters to be used
+        :param writer: the tensorflow writer to use
+        :param textlogger: the text logger to use to store the information
+        :param name: the name displayed on the file logger
         :param xval: the 'x value' to be written in tensorboard
         :param minibatchnum: the current number of minibatches
         :param train: does it concern the training set
@@ -533,17 +558,17 @@ class ExpData:
                     sess, toberun=[
                         graph.mergedsummaryvar, graph.loss])
                 if train:
-                    writers.tfwriter.trainwriter.add_summary(summary, xval)
+                    writer.add_summary(summary, xval)
                 else:
-                    writers.tfwriter.valwriter.add_summary(summary, xval)
+                    writer.add_summary(summary, xval)
                 acc_loss += loss_
                 error_nan = not np.isfinite(loss_)
                 if error_nan:
                     break
             except tf.errors.OutOfRangeError:
                 break
-        name = "Train" if train else "Validation"
-        writers.logger.info(
+        # name = "Train" if train else "Validation"
+        textlogger.info(
             "{} l2 error after {} minibatches : {}".format(
                 name, minibatchnum, acc_loss))
         return error_nan, acc_loss
@@ -634,6 +659,30 @@ class ExpData:
         """
         sess.run(self.training_init_op)
 
+    def computetensorboard_annex(self, sess, writers, graph, xval, minibatchnum, name):
+        """
+        Will compute the error on the data "referenced" by "name", and store it using the TFWriters "writers"
+        :param sess: a tensorflow session
+        :param graph: an object of class ExpGraph
+        :param writers: an object of class ExpWriter
+        :param xval: the index value of the tensorboard run
+        :param minibatchnum: the number of minibatches computed
+        :param name: the name of the dataset you want the error from
+        :return: nothing
+        """
+        if not name in self.otheriterator_init:
+            error_str = "ExpData.computetensorboard_annex you ask to compute the error on the dataset name \"{}\""
+            error_str += " but it does not exists.\nMake sure to have passed the proper \"otherdsinfo\" arguments"
+            error_str += " when you build your ExpData. For example :\n"
+            error_str += "otherdsinfo={{ \"{}\":{{\"argsdata\":(), \"kwargsdata\": {{ \"filename\": "
+            error_str += "\"test_example.tfrecord\" }} }} }} }} \n"
+            error_str += "if you want to link the dataset with data coming from \"test_example.tfrecord\" to the name \"{}\""
+            raise RuntimeError(error_str.format(name, name, name))
+        sess.run(self.otheriterator_init[name])
+        self.computetensorboard_aux(
+            sess=sess, graph=graph, writer=writers.tfwriter.othersavers[name], xval=xval,
+            minibatchnum=minibatchnum, train=False, name=name, textlogger=writers.logger)
+        sess.run(self.training_init_op)
 
     # bellow deperecated stuff
     def getsizeoutX(self):

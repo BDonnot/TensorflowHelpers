@@ -23,11 +23,11 @@ if __name__ == "__main__":
             parameters = ExpSaverParam(name_exp="firstTestTFrecords", path=path_exp,
                                        pathdata=pathdata)
 
-            kwargsTdata = {"filenames": {"input": "conso_X.csv", "ourput": "conso_Y.csv"},
-                           "sizes": {"input":1690, "output": 845}, "num_thread": 2}
+            kwargsTdata = {"filenames": {"input": "conso_X.csv", "ourput": "conso_Y.csv"}, "num_thread": 2}
             datakwargs = {"classData": ExpCSVDataReader,
                                 "kwargsTdata": kwargsTdata,
-                                "kwargsVdata": kwargsTdata
+                                "kwargsVdata": kwargsTdata,
+                           "sizes": {"input":1690, "output": 845}
             }
             # optional for standard graph
             var_x_name = "input"
@@ -46,11 +46,12 @@ if __name__ == "__main__":
                                        num_savings_model=1)
             var_x_name = "prod_p"
             var_y_name = "prod_q"
-            kwargsTdata = {"filename": "neighbours-test.tfrecord", "sizes": {var_x_name:54, var_y_name:54}, "num_thread": 2}
+            kwargsTdata = {"filename": "neighbours-test.tfrecord", "num_thread": 2}
             datakwargs = {"classData": ExpTFrecordsDataReader,
                                 "kwargsTdata": kwargsTdata,
-                                "kwargsVdata": kwargsTdata
-            }
+                                "kwargsVdata": kwargsTdata,
+                          "sizes": {var_x_name: 54, var_y_name: 54}
+                          }
 
 
         my_exp = Exp(parameters=parameters,
@@ -79,21 +80,26 @@ if __name__ == "__main__":
         var_x_name = {"prod_p", "prod_v", "loads_p"}
         var_y_name = {"prod_q", "loads_v"}
         sizes = {"prod_p": 54, "prod_q": 54, "loads_p":99, "prod_v":54, "loads_v": 99}
-        kwargsTdata = {"filename": "neighbours-train.tfrecord",
-                       "sizes": sizes,
+        kwargsTdata = {"filename": "N1-train.tfrecord",
                        "num_thread": 2}
-        kwargsVdata = {"filename": "neighbours-val.tfrecord",
-                       "sizes": sizes,
+        kwargsVdata = {"filename": "N1-val.tfrecord",
                        "num_thread": 2}
         datakwargs = {"classData": ExpTFrecordsDataReader,
                       "kwargsTdata": kwargsTdata,
-                      "kwargsVdata": kwargsVdata
-                      }
+                      "kwargsVdata": kwargsVdata,
+                      "sizes": sizes
+        }
         my_exp = Exp(parameters=parameters,
                      dataClass=ExpData, datakwargs=datakwargs,
-                     graphType=ExpGraph, graphkwargs={"kwargsNN": {"layersizes": [50, 50], "weightnorm": True},
+                     graphType=ExpGraph, graphkwargs={"kwargsNN": {"layersizes": [100, 100], "weightnorm": True},
                                                               "var_x_name": var_x_name,
                                                               "var_y_name": var_y_name
-                                                              }
+                                                              },
+                     otherdsinfo={ # "Test": {"argsdata": (), "kwargsdata": {"filename": "N1-test.tfrecord"}}, # dataset corrupted
+                                  "n2_neighbours": {"argsdata": (),
+                                                    "kwargsdata": {"filename": "neighbours-train.tfrecord"}},
+                                  "n2_random": {"argsdata": (),
+                                                 "kwargsdata": {"filename": "random-train.tfrecord"}},
+                                  }
                      )
         my_exp.start()

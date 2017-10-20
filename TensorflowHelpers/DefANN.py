@@ -16,7 +16,6 @@ import tensorflow as tf
 # TODO move it to another file
 # TODO remove the loss of the definition of the neural network.
 
-
 class DenseLayer:
     def __init__(self, input, size, relu=False, bias=True, guided_dropconnect_mask=None, weight_normalization=False, keep_prob=None):
         """
@@ -101,6 +100,7 @@ class DenseLayer:
             sess.run(tf.assign(self.g, scale_init/tf.sqrt(v_init + 1e-10), name="weigth_normalization_init_g"))
             if self.bias:
                 sess.run(tf.assign(self.b, -m_init*scale_init, name="weigth_normalization_init_b"))
+
 
 class ResidualBlock:
     def __init__(self, input, size, relu=False, bias=True, guided_dropconnect_mask=None, weight_normalization=False, keep_prob=None):

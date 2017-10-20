@@ -58,36 +58,46 @@ class Path:
 
 
 class TFWriters:
-    def __init__(self, trainname, valname, minibatchname, saver=None):
+    def __init__(self, path, trainname, valname, minibatchname, saver=None, othersaver={}):
         """Handle different kind of writer for usage in tensorflow
            By default save 3 infos:
             -minibatch: the last loss computed
             -train; error on the whole training set
             -validation: error on the whole validation set
+        :param path: where the files are stored
         :param trainname: the name displayed for the "training" writer
         :param valname: the name displayed for the "valname" writer
         :param minibatchname: the name displayed for the "minibatch" writer
+        :param othersaver: names of other saver to use. These names should match names given in datasets
         """
 
         # save the minibatch info
         self.minibatchname = minibatchname
         self.minibatchwriter = tf.summary.FileWriter(
-            minibatchname, graph=tf.get_default_graph())
+            os.path.join(path, minibatchname)
+            , graph=tf.get_default_graph())
 
         # save the training set info
         self.trainname = trainname
         self.trainwriter = tf.summary.FileWriter(
-            trainname, graph=tf.get_default_graph())
+            os.path.join(path, trainname),
+            graph=tf.get_default_graph())
 
         # save the validation set info
         self.valname = valname
         self.valwriter = tf.summary.FileWriter(
-            valname, graph=tf.get_default_graph())
+            os.path.join(path, valname),
+            graph=tf.get_default_graph())
 
         # saver of the graph
         self.saver = saver if saver is not None else tf.train.Saver(
             max_to_keep=None)
 
+        #other savers
+        self.othersavers = {}
+        for savername in othersaver:
+            self.othersavers[savername] = tf.summary.FileWriter(os.path.join(path, savername),
+                                                           graph=tf.get_default_graph())
         # TODO idee : mettre en argument une liste (nomsaver / dataset), et quand on appelerait 'save' ca calculerait,
         # TODO pour chaque element de cette liste, l'erreur sur le datset et le
         # TODO sauvegarderait au bon endroit.
@@ -107,7 +117,8 @@ class ExpLogger:
             num_savings,
             num_savings_minibatch,
             epochsize,
-            saveEachEpoch):
+            saveEachEpoch,
+            otherinfo = {}):
         """
         Logger that will log the data in tensorboard as well as in a log file, to be used in the Experiment class.
         It will also have the possibility to save and restore tensorflow models
@@ -122,6 +133,7 @@ class ExpLogger:
         :param epochsize: size of the epoch (1 epoch = 1 pass through all the training set)
         :param saveEachEpoch: do you want to force saving of error for the whole validation set (and training set) at each end of epoch
         :param filesavenum: an addition file where some data will be store (time and number of minibatches by default)
+        :param otherinfo: names forwarded to TFWriters for other info to save (use this if you want to report error on a test set for example)
         """
 
         # logging with text files (usefull when you don't want to / can't use tensorboard
@@ -146,12 +158,13 @@ class ExpLogger:
             self.logger = logger
 
         # tensorflow wirter / saver / restorer
-        self.tfwriter = TFWriters(
-            trainname=os.path.join(
-                path, "Train"), valname=os.path.join(
-                path, "Val"), minibatchname=os.path.join(
-                path, "Minibatch"), saver=saver)
-
+        self.tfwriter = TFWriters(path=path,
+                                  trainname="Train",
+                                  valname="Val",
+                                  minibatchname="Minibatch",
+                                  saver=saver,
+                                  othersaver=otherinfo)
+        self.otherinfo = otherinfo
         self.path_saveinfomini = os.path.join(path, "minibatch.count")
         self.filesavenum = open(self.path_saveinfomini, "a")
         self.params = params
@@ -209,8 +222,13 @@ class ExpLogger:
                 minibatchnum %
                 self.params.save_loss == 0):
             computed = True
+            # compute error on training set and validation set (mandatory)
             error_nan, loss_ = data.computetensorboard(
                 sess=sess, writers=self, graph=graph, xval=global_step, minibatchnum=minibatchnum)
+            # compute error on the other datasets
+            for savername in self.otherinfo:
+                data.computetensorboard_annex(sess=sess, writers=self, graph=graph, xval=global_step,
+                                              minibatchnum=minibatchnum, name=savername)
 
         return computed, error_nan, loss_
 
@@ -399,7 +417,8 @@ class ExpModel:
                  data, graph,
                  lossfun=tf.nn.l2_loss,
                  optimizerClass=tf.train.AdamOptimizer, optimizerkwargs={},
-                 netname=""):
+                 netname="",
+                 otherinfo={}):
         """ init the model with hyper-parameters etc
         add the loss and the optimizer to the pure definition of the neural network.
         The NN is defined by ExpGraphOneXOneY.
@@ -412,6 +431,7 @@ class ExpModel:
         :param lossfun: the loss function to use
         :param optimizerClass: the class optimizer to use (tf.train.optimizer)
         :param optimizerkwargs: the key-words arguments to build the optimizer. You can pass the learning rate here.
+        :param otherinfo: an iterable: the names of all the other dataset for which errors will be computed (for example Test dataset)
         # :param graphType: the type of "ExpGraphOneXOneY" to use
         # :param pars: the dictionnary of hyper parameters of the mdoels
         """
@@ -489,7 +509,8 @@ class ExpModel:
             num_savings_minibatch=exp_params.num_savings_minibatch,
             epochsize=exp_params.epochsize,
             saveEachEpoch=exp_params.saveEachEpoch,
-            name_model=exp_params.name_model)
+            name_model=exp_params.name_model,
+            otherinfo=otherinfo)
 
     def getlossfun(self):
         """
@@ -721,7 +742,8 @@ class Exp:
                  parameters,
                  dataClass=ExpData, dataargs=(), datakwargs={},
                  graphType=ExpGraphOneXOneY, graphargs=(), graphkwargs={},
-                 modelType=ExpModel, modelargs=(), modelkwargs={}
+                 modelType=ExpModel, modelargs=(), modelkwargs={},
+                 otherdsinfo= {}
                  ):
         """
         Build the experience.
@@ -740,6 +762,7 @@ class Exp:
         :param modelType:
         :param modelargs:
         :param modelkwargs:
+        :param otherdsinfo:
         """
 
         self.parameters = parameters
@@ -760,6 +783,7 @@ class Exp:
         with tf.variable_scope("datareader"):
             self.data = dataClass(
                 pathdata=parameters.pathdata,
+                otherdsinfo=otherdsinfo,
                 *dataargs,
                 **datakwargs)
         # self.inputs, self.inputsize = self.data.getinputs()
@@ -776,6 +800,7 @@ class Exp:
             exp_params=self.parameters,
             data=self.data,
             graph=self.graph,
+            otherinfo=otherdsinfo.keys(),
             *modelargs,
             **modelkwargs)
 

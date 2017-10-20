@@ -116,9 +116,8 @@ class ExpGraphOneXOneY:
 
 class ExpGraph(ExpGraphOneXOneY):
     def __init__(self, data, var_x_name={"input"}, var_y_name={"output"}, nnType=NNFully, argsNN=(), kwargsNN={}):
-        """The base class for every 'Graph' subclass to be use in with Experiment.
-
-        This class works can deal with multiple input/output.
+        """
+        This class can deal with multiple input/output.
         By default, it concatenate all the input variables in one vector, and does the same for the output.
         For example, the underlying neural network will not see the difference between the data type.
         
@@ -205,3 +204,109 @@ class ExpGraph(ExpGraphOneXOneY):
         :return: the number of columns (variables) in output
         """
         return int(self.output.get_shape()[1])
+
+
+class ComplexGraph(ExpGraphOneXOneY):
+    def __init__(self, data, var_x_name={"input"}, var_y_name={"output"},
+                 nnType=NNFully, argsNN=(), kwargsNN={},
+                 encDecNN=NNFully, args_enc_dec=(), kwargs_enc_dec={},
+                 sizes = {"input": 1}, outputsize=1):
+        """
+        This class can deal with multiple input/output.
+        It will first "encode" with a neural network of type "encDecNN" for each input.
+        Then concatenate all the outputs to feed the "main" neural network of type "nnType"
+        Afterwards, information goes through a decoding process, with neural network of type "encDecNN"
+
+        The value for each can be retrieve with standard methods:
+        - self.get_true_output_dict()
+        - self.vars_out
+        - self.vars_in
+
+        Basically, this should represent the neural network.
+        :param data: the dictionnary of input tensor data (key=name, value=tensorflow tensor)
+        :param var_x_name: iterable: the names of all the input variables
+        :param var_y_name: iterable: the name of  all the output variables
+        :param nnType: the type of neural network to use
+        :param args forwarded to the initializer of neural network
+        :param kwargsNN: key word arguments forwarded to the initializer of neural network
+        :param encDecNN: class to use to build the neural networks for encoding / decoding
+        :param args_enc_dec:
+        :param kwargs_enc_dec: 
+        :param sizes: the size output by the encoder for each input variable. Dictionnary with key: variable names, value: size
+        :param outputsize: the output size for the intermediate / main neural network
+        """
+
+        self.data = data  # the dictionnary of data pre-processed as produced by an ExpData instance
+        self.outputname = var_y_name  # name of the output variable, should be one of the key of self.data
+        self.inputname = var_x_name
+        self.data = data
+
+        # dictionnary of "ground truth" data
+        self.true_dataY = {k: self.data[k] for k in self.outputname}
+        self.true_dataX = {k: self.data[k] for k in self.inputname}
+
+        # 1. build the encodings neural networks
+        self.outputEnc = {}
+        self.encoders = {}
+        with tf.variable_scope("ComplexGraph_encoding"):
+            for varname in self.inputname:
+                size_out = sizes[varname]
+                tmp = encDecNN(input=self.data[varname],
+                               outputsize=size_out,
+                               *args_enc_dec,
+                               **kwargs_enc_dec)
+                self.encoders[varname] = tmp
+                self.outputEnc[varname] = tmp.pred
+
+        # self.input = tf.zeros(shape=(None, 0), dtype=tf.float32)
+        tup = tuple()
+        for el in self.inputname:
+            tup += (self.outputEnc[el],)
+        self.enc_output = tf.concat(tup, axis=1, name="encoder_output_concatenantion")
+
+        # 3. build the neural network
+        self.nn = nnType(input=self.enc_output,
+                         outputsize=outputsize,
+                         *argsNN,
+                         **kwargsNN)
+
+        # 4. build the decodings neural networks
+        self.outputDec = {}
+        self.decoders = {}
+        self.size_out = 0
+        with tf.variable_scope("ComplexGraph_decoding"):
+            for varname in self.outputname:
+                size_out = sizes[varname]
+                tmp = encDecNN(input=self.nn.pred,
+                               outputsize=size_out,
+                               *args_enc_dec,
+                               **kwargs_enc_dec)
+                self.decoders[varname] = tmp
+                self.outputDec[varname] = tmp.pred
+                self.size_out += int(tmp.pred.get_shape()[1])
+
+        # 5. build structure to retrieve the right information from the concatenated one's
+        self.vars_out = self.outputDec  # dictionnary of output of the NN
+        self.vars_in = self.true_dataX
+
+        # 6. create the fields summary and loss that will be created in ExpModel and assign via "self.init"
+        self.mergedsummaryvar = None
+        self.loss = None
+
+    def get_true_output_dict(self):
+        """
+        :return: the output data dictionnary. key: varname, value=true value of this data
+        """
+        return self.true_dataY
+
+    def get_input_size(self):
+        """
+        :return: the number of columns (variables) in input
+        """
+        return int(self.enc_output.get_shape()[1])
+
+    def get_output_size(self):
+        """
+        :return: the number of columns (variables) in output
+        """
+        return self.size_out
