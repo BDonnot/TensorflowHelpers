@@ -143,6 +143,7 @@ class ExpCSVDataReader(ExpDataReader):
                 spl = li.split(";")
                 acc += [float(el) for el in spl]
                 acc2 += [float(el) * float(el) for el in spl]
+        count += 1
         acc /= count
         acc2 /= count
         m = acc
@@ -298,7 +299,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
                     for k, val in sizes.items()}
         parsed_features = tf.parse_single_example(example_proto, features)
         for k in sizes.keys():
-            parsed_features[k] = parsed_features[k]- ms[k]
+            parsed_features[k] = parsed_features[k] - ms[k]
             parsed_features[k] = parsed_features[k]/stds[k]
 
         return parsed_features
@@ -346,7 +347,6 @@ class ExpTFrecordsDataReader(ExpDataReader):
                             acc2[k] += vect*vect
                     except tf.errors.OutOfRangeError:
                         break
-
             acc = {k: v/count for k,v in acc.items()}
             acc2 = {k: v/count for k,v in acc2.items()}
 

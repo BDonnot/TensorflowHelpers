@@ -354,7 +354,8 @@ class ExpSaverParam:
                  saveEachEpoch=False,
                  minibatchnum=0,
                  batch_size=1,
-                 num_epoch=1):
+                 num_epoch=1,
+                 continue_if_exists=False):
         """
         Save the loss (full training / test set) each "self.save_loss" minibatches
         Save the loss (minibatch) each "self.num_savings_minibatch" minibatches
@@ -374,7 +375,7 @@ class ExpSaverParam:
         :param minibatchnum: the number of minibatches computed
         :param batch_size: the size of one training minibatch
         :param num_epoch: the number of epoch to run
-        # :param name_model: the model name
+        :param continue_if_exists: if the folder exists, stop do not run the expriment
         """
         self.path = path
         self.pathdata = pathdata
@@ -397,6 +398,7 @@ class ExpSaverParam:
         self.path_saver = os.path.join(self.name_exp_with_path, "TFInfo")
         self.num_epoch = num_epoch
         self.total_minibatches = 0
+        self.continue_if_exists = continue_if_exists
 
     def initsizes(self, nrows):
         """
@@ -778,7 +780,13 @@ class Exp:
                     self.path))
             os.mkdir(self.path)
         else:
-            print("The path {} already exists".format(self.path))
+            if self.parameters.continue_if_exists:
+                print("The path {} already exists".format(self.path))
+            else:
+                str_ = "The path \"{}\" already exists"
+                str_ += "If you still want to continue you can pass \"continue_if_exists=True\""
+                str_ += " when you build the parameters of the experiments (object of class ExpSaverParam)"
+                raise RuntimeError(str_.format(self.path))
 
         # TODO
         self.startfromscratch = startfromscratch  # do I start the experiments from scratch
@@ -793,11 +801,13 @@ class Exp:
                 *dataargs,
                 **datakwargs)
 
-        # 2. build the graph or load the graph
+
         # if not self.startfromscratch:
         #     self.parameters.saver = tf.train.import_meta_graph(os.path.join(self.path, "TFInfo", "ModelTrained_best.meta"))
         # else:
-        self.parameters.saver = None
+        # self.parameters.saver = tf.train.Saver()
+
+        # 2. build the graph or load the graph
         self.graph = None
         with tf.variable_scope("neuralnetwork"):
             self.graph = graphType(data=self.data.getdata(),
@@ -840,17 +850,19 @@ class Exp:
             self.logbeginning()
             self.sess.run(tf.global_variables_initializer())
         else:
+            self.parameters.saver = tf.train.Saver()
             # get the value of the best variable saved
             self.parameters.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
-
         # 3. init the data
         self.data.init(self.sess)
 
         if not self.startfromscratch:
+            # check that the model didn't do anything stupid while reloading
             self.model.checkreloaded(self.sess)
-            pdb.set_trace()
-        # 2. init the weight normalization, is needed
-        self.graph.initwn(self.sess)
+
+        # 2. init the weight normalization, if needed
+        if self.startfromscratch:
+            self.graph.initwn(self.sess)
 
         # 4. launch the computation
         for epochnum in range(self.parameters.num_epoch):
@@ -860,6 +872,7 @@ class Exp:
 
         #  log the end of the experiment
         self.logend(is_error_nan)
+        # pdb.set_trace()
 
     def runallminibatchesthisepoch(self):
         """

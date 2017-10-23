@@ -149,7 +149,7 @@ class ExpGraph(ExpGraphOneXOneY):
         self.dimin = {}  # to memorize which data goes where
         prev = 0
         tup = tuple()
-        for el in self.inputname:
+        for el in sorted(self.inputname):
             tup += (self.data[el],)
             this_size = int(self.data[el].get_shape()[1])
             self.dimin[el] = (prev, prev+this_size)
@@ -160,7 +160,7 @@ class ExpGraph(ExpGraphOneXOneY):
         self.dimout = {}  # to memorize which data goes where
         prev = 0
         tup = tuple()
-        for el in self.outputname:
+        for el in sorted(self.outputname):
             tup += (self.data[el],)
             this_size = int(self.data[el].get_shape()[1])
             self.dimout[el] = (prev, prev+this_size)
@@ -168,19 +168,18 @@ class ExpGraph(ExpGraphOneXOneY):
         self.output = tf.concat(tup, axis=1, name="output_concatenantion")
 
         # 3. build the neural network
-        self.nn = nnType(
-            input=self.input,
-            outputsize=int(self.output.get_shape()[1]),
-            *argsNN,
-            **kwargsNN)
+        self.nn = nnType(input=self.input,
+                         outputsize=int(self.output.get_shape()[1]),
+                         *argsNN,
+                         **kwargsNN)
 
         # 4. build structure to retrieve the right information from the concatenated one's
         self.vars_out = {} # dictionnary of output of the NN
-        for varn in self.outputname:
+        for varn in sorted(self.outputname):
             be, en = self.dimout[varn]
             self.vars_out[varn] = self.nn.pred[:, be:en]
         self.vars_in = {}
-        for varn in self.inputname:
+        for varn in sorted(self.inputname):
             be, en = self.dimin[varn]
             self.vars_in[varn] = self.input[:, be:en]
 
@@ -208,10 +207,10 @@ class ExpGraph(ExpGraphOneXOneY):
 
 
 class ComplexGraph(ExpGraphOneXOneY):
-    def __init__(self, data, var_x_name={"input"}, var_y_name={"output"},
+    def __init__(self, data, outputsize, var_x_name={"input"}, var_y_name={"output"},
                  nnType=NNFully, argsNN=(), kwargsNN={},
                  encDecNN=NNFully, args_enc_dec=(), kwargs_enc_dec={},
-                 sizes = {"input": 1}, outputsize=1):
+                 sizes = {"input": 1}):
         """
         This class can deal with multiple input/output.
         It will first "encode" with a neural network of type "encDecNN" for each input.
@@ -245,23 +244,28 @@ class ComplexGraph(ExpGraphOneXOneY):
         # dictionnary of "ground truth" data
         self.true_dataY = {k: self.data[k] for k in self.outputname}
         self.true_dataX = {k: self.data[k] for k in self.inputname}
+        self.size_in = 0
+        for _,v in self.true_dataX.items():
+            self.size_in += int(v.get_shape()[1])
 
         # 1. build the encodings neural networks
         self.outputEnc = {}
         self.encoders = {}
+        # pdb.set_trace()
         with tf.variable_scope("ComplexGraph_encoding"):
-            for varname in self.inputname:
-                size_out = sizes[varname]
-                tmp = encDecNN(input=self.data[varname],
-                               outputsize=size_out,
-                               *args_enc_dec,
-                               **kwargs_enc_dec)
-                self.encoders[varname] = tmp
-                self.outputEnc[varname] = tmp.pred
+            for varname in sorted(self.inputname):
+                with tf.variable_scope(varname):
+                    size_out = sizes[varname]
+                    tmp = encDecNN(input=self.data[varname],
+                                   outputsize=size_out,
+                                   *args_enc_dec,
+                                   **kwargs_enc_dec)
+                    self.encoders[varname] = tmp
+                    self.outputEnc[varname] = tmp.pred
 
         # self.input = tf.zeros(shape=(None, 0), dtype=tf.float32)
         tup = tuple()
-        for el in self.inputname:
+        for el in sorted(self.inputname):
             tup += (self.outputEnc[el],)
         self.enc_output = tf.concat(tup, axis=1, name="encoder_output_concatenantion")
 
@@ -276,15 +280,16 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.decoders = {}
         self.size_out = 0
         with tf.variable_scope("ComplexGraph_decoding"):
-            for varname in self.outputname:
-                size_out = sizes[varname]
-                tmp = encDecNN(input=self.nn.pred,
-                               outputsize=size_out,
-                               *args_enc_dec,
-                               **kwargs_enc_dec)
-                self.decoders[varname] = tmp
-                self.outputDec[varname] = tmp.pred
-                self.size_out += int(tmp.pred.get_shape()[1])
+            for varname in sorted(self.outputname):
+                with tf.variable_scope(varname):
+                    # size_out = sizes[varname]
+                    tmp = encDecNN(input=self.nn.pred,
+                                   outputsize=int(self.data[varname].get_shape()[1]),
+                                   *args_enc_dec,
+                                   **kwargs_enc_dec)
+                    self.decoders[varname] = tmp
+                    self.outputDec[varname] = tmp.pred
+                    self.size_out += int(tmp.pred.get_shape()[1])
 
         # 5. build structure to retrieve the right information from the concatenated one's
         self.vars_out = self.outputDec  # dictionnary of output of the NN
@@ -304,10 +309,36 @@ class ComplexGraph(ExpGraphOneXOneY):
         """
         :return: the number of columns (variables) in input
         """
-        return int(self.enc_output.get_shape()[1])
+        return self.size_in
 
     def get_output_size(self):
         """
         :return: the number of columns (variables) in output
         """
         return self.size_out
+
+    def getnbparam(self):
+        """
+        :return:  the number of total free parameters of the neural network"""
+        res = 0
+        for _,v in self.encoders.items():
+            res += v.getnbparam()
+        res += self.nn.getnbparam()
+        for _,v in self.decoders.items():
+            res += v.getnbparam()
+        return res
+
+    def getflop(self):
+        """
+        flops are computed using formulas in https://mediatum.ub.tum.de/doc/625604/625604
+        it takes into account both multiplication and addition.
+        Results are given for a minibatch of 1 example for a single forward pass.
+        :return: the number of flops of the neural network build 
+        """
+        res = 0
+        for _,v in self.encoders.items():
+            res += v.getflop()
+        res += self.nn.getflop()
+        for _,v in self.decoders.items():
+            res += v.getflop()
+        return res
