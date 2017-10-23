@@ -1,7 +1,7 @@
-from .DefANN import DenseLayer, NNFully
+from .DefANN import DenseLayer, NNFully, ResidualBlock, DenseBlock
 from .Experiment import Path
 from .Experiment import TFWriters, ExpLogger  # logging and saving data
-from .DefDataHandler import ExpDataReader, ExpCSVDataReader, ExpData  # reading and handling data
+from .DefDataHandler import ExpDataReader, ExpCSVDataReader, ExpData, ExpTFrecordsDataReader  # reading and handling data
 from .DefGraph import ExpGraphOneXOneY, ExpGraph, ComplexGraph  # the tensorflow "main" comptuation graph
 from .Experiment import ExpSaverParam  # parameters for an experiment
 from .Experiment import ExpModel  # model you want to use
