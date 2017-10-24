@@ -265,7 +265,7 @@ class DenseBlock:
 
 
 class NNFully:
-    def __init__(self, input, outputsize, layersizes=(100,), weightnorm=False, bias=True,
+    def __init__(self, input, outputsize, layersizes=(), weightnorm=False, bias=True,
                  layerClass=DenseLayer, kwardslayer={}):
         """
         Most classical form of neural network,
@@ -293,8 +293,8 @@ class NNFully:
             input_propersize = DenseLayer(input=input, size=outputsize, relu=False,
                                           bias=False, guided_dropconnect_mask=None, weight_normalization=False,
                                           keep_prob=None, layernum="scaling_proper_input_size")
-            self.params_added = input_propersize.nbparams
-            self.flop_added = input_propersize.flops
+            self.params_added += input_propersize.nbparams
+            self.flop_added += input_propersize.flops
             z = input_propersize.res
         else:
             z = input
