@@ -393,13 +393,12 @@ class ExpData:
         :param otherdsinfo : dictionnaries of keys = dataset name, values = dictionnaries of keys: "argsdata" : tuple, kwargsdata: dictionnaries
         """
         # the data for training (fitting the models parameters)
-        self.trainingData = classData(
-            pathdata=pathdata,
-            *argsTdata,
-            **kwargsTdata,
-            sizes=sizes,
-            train=True,
-            batch_size=batch_size)
+        self.trainingData = classData(pathdata=pathdata,
+                                      *argsTdata,
+                                      sizes=sizes,
+                                      train=True,
+                                      batch_size=batch_size,
+                                      **kwargsTdata)
         # get the values of means and standard deviation of the training set,
         # to be use in the others sets
         self.ms = self.trainingData.ms
@@ -408,22 +407,22 @@ class ExpData:
         # set)
         self.trainData = classData(pathdata=pathdata,
                                    *argsTdata,
-                                   **kwargsTdata,
                                    sizes=sizes,
                                    train=False,
                                    batch_size=sizemax,
                                    ms=self.ms,
-                                   sds=self.sds)
+                                   sds=self.sds,
+                                   **kwargsTdata)
         # the data for validation set (fitting the models hyper parameters --
         # only used when reporting error on the whole set)
         self.valData = classData(pathdata=pathdata,
                                  *argsVdata,
-                                 **kwargsVdata,
                                  sizes=sizes,
                                  train=False,
                                  batch_size=sizemax,
                                  ms=self.ms,
-                                 sds=self.sds)
+                                 sds=self.sds,
+                                 **kwargsVdata)
         self.sizemax = sizemax # size maximum of a "minibatch" eg the maximum number of examples that will be fed
         # at once for making a single forward computation
 
@@ -446,12 +445,12 @@ class ExpData:
         for otherdsname, values in otherdsinfo.items():
             self.otherdatasets[otherdsname] = classData(pathdata=pathdata,
                                                         *values["argsdata"],
-                                                        **values["kwargsdata"],
                                                         sizes=sizes,
                                                         train=False,
                                                         batch_size=sizemax,
                                                         ms=self.ms,
-                                                        sds=self.sds
+                                                        sds=self.sds,
+                                                        **values["kwargsdata"]
                                                         )
             self.otheriterator_init[otherdsname] = self.iterator.make_initializer(self.otherdatasets[otherdsname].dataset)
 
