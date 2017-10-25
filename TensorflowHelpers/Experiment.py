@@ -473,6 +473,7 @@ class ExpModel:
             self.l1_avg = {}
             self.l2_avg = {}
             self.l_max = {}
+            li_summaries = []
             for var_output_name in self.inference.keys():
                 k = var_output_name
                 with tf.variable_scope("{}".format(var_output_name)):
@@ -488,7 +489,7 @@ class ExpModel:
                     sum2 = tf.summary.scalar(netname + "l2_avg_{}_{}".format(netname, k), self.l2_avg[k])
                     sum3 = tf.summary.scalar(netname + "loss_max_{}_{}".format(netname, k), self.l_max[k])
 
-                    self.mergedsummaryvar = tf.summary.merge([sum0, sum1, sum2, sum3])
+                    li_summaries += [sum0, sum1, sum2, sum3]
 
                     tf.add_to_collection(NAMESAVEDTFVARS, self.losses[k])
                     tf.add_to_collection(NAMESAVEDTFVARS, self.inference[k])
@@ -498,7 +499,7 @@ class ExpModel:
 
                     tf.add_to_collection("LOSSFUNFully" + netname, self.losses[k])
                     tf.add_to_collection("OUTPUTFully" + netname, self.inference[k])
-
+            self.mergedsummaryvar = tf.summary.merge(li_summaries)
         self.graph.init(self.mergedsummaryvar, self.loss)
 
         # 4. create the saver object

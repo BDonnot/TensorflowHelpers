@@ -47,7 +47,7 @@ if __name__ == "__main__":
                               },
                  otherdsinfo={"test": {"argsdata": (), "kwargsdata": {"filename": "conso_locale_test_small.tfrecord"}} },
                  startfromscratch=True,
-                 modelkwargs={"optimizerkwargs": {"lr": 1e-4}}
+                 modelkwargs={"optimizerkwargs": {"learning_rate": 1e-4}}
                  )
     my_exp.start()
     sys.exit("done for now")

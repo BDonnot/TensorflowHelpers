@@ -200,7 +200,7 @@ class DenseBlock:
         for counting the flops of operations see https://mediatum.ub.tum.de/doc/625604/625604
         
         this block is insipired from 
-        https://www.researchgate./publication/306885833_Densely_Connected_Convolutional_Networks :
+        https://www.researchgate.net/publication/306885833_Densely_Connected_Convolutional_Networks :
         
         dropout (regular) is done at the end of the comptuation
         
