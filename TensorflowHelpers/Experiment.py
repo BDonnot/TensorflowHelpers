@@ -797,10 +797,11 @@ class Exp:
         self.data = None
         with tf.variable_scope("datareader"):
             self.data = dataClass(
+                *dataargs,
                 batch_size=parameters.batch_size,
                 pathdata=parameters.pathdata,
+                path_exp=self.path,
                 otherdsinfo=otherdsinfo,
-                *dataargs,
                 **datakwargs)
 
 
@@ -1003,4 +1004,11 @@ class Exp:
             for key, val in dict_summary.items():
                 dict_saved[key] = val
             json.dump(dict_saved, f, sort_keys=True, indent=4)
+
+    def getpred(self, dsname=None):
+        """
+        :param dsnam: the name of the dataset you want to get the error from (none=validation dataset)
+        :return: 2 dictionnaries: one containing the prediction, the second the true values
+        """
+        return self.data.getpred(self.sess, self.graph, self.graph.outputname, dataset_name=dsname)
 

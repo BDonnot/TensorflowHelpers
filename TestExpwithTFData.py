@@ -2,11 +2,62 @@ import sys
 
 from TensorflowHelpers.Experiment import ExpData, Exp, ExpSaverParam
 from TensorflowHelpers.DefGraph import ExpGraphOneXOneY, ExpGraph, ComplexGraph
-from TensorflowHelpers.DefDataHandler import ExpCSVDataReader, ExpTFrecordsDataReader
+from TensorflowHelpers.DefDataHandler import ExpCSVDataReader, ExpTFrecordsDataReader, ExpNpyDataReader
 from TensorflowHelpers.DefANN import ResidualBlock, DenseBlock
 
+import pdb
 if __name__ == "__main__":
     #TODO set the seeds, generate random data and industrialize this test
+
+    # #test de l'interface avec les array numpy
+    # # define the experiment parameters
+    # pathdata = "/home/bdonnot/Documents/PyHades2/ampsdatareal_withreact_118_5000"
+    # path_exp = "/home/bdonnot/Documents/PyHades2/Test"
+    #
+    # parameters = ExpSaverParam(name_exp="firstTestNPYReader",
+    #                            path=path_exp,
+    #                            pathdata=pathdata,
+    #                            num_epoch=10,
+    #                            num_savings=1,
+    #                            num_savings_minibatch=5,
+    #                            num_savings_model=1,
+    #                            continue_if_exists=True,
+    #                            batch_size=50)
+    # var_x_name = {"prod_p", "prod_v", "loads_p"}
+    # var_y_name = {"flows_a", "flows_MW"}
+    # sizes = {"loads_p": 99, #"loads_q": 99, "loads_v": 99,
+    #          "prod_p": 54, "prod_v": 54, #"prod_q": 54,
+    #          "flows_MW": 186, "flows_a": 186} #, "flowsext_MW": 186, "flowsext_a": 186, "deco_enco": 186}
+    #
+    # sizes_out = {"prod_p": 300, "prod_v": 300, "loads_p": 300} #, "x_cat": 300}
+    #
+    # fns = {k: "{}"+k+".npy" for k in var_x_name|var_y_name}
+    # kwargsTdata = {"filenames": {k: v.format("train_") for k, v in fns.items()},
+    #                "num_thread": 2}
+    # kwargsVdata = {"filenames":  {k: v.format("val_") for k, v in fns.items()},
+    #                "num_thread": 2}
+    # # pdb.set_trace()
+    # datakwargs = {"classData": ExpNpyDataReader,
+    #               "kwargsTdata": kwargsTdata,
+    #               "kwargsVdata": kwargsVdata,
+    #               "sizes": sizes
+    #               }
+    # my_exp = Exp(parameters=parameters,
+    #              dataClass=ExpData, datakwargs=datakwargs,
+    #              graphType=ComplexGraph,
+    #              graphkwargs={"kwargsNN": {"layersizes": [100, 100], "weightnorm": True, "layerClass": ResidualBlock},
+    #                           "var_x_name": var_x_name,
+    #                           "var_y_name": var_y_name,
+    #                           "sizes": sizes_out,
+    #                           "outputsize": 150,
+    #                           "kwargs_enc_dec": {"layerClass": DenseBlock, "kwardslayer": {"nblayer":5}}
+    #                           },
+    #              otherdsinfo={},#"test": {"argsdata": (), "kwargsdata": {"filename": "conso_locale_test_small.tfrecord"}} },
+    #              startfromscratch=True,
+    #              modelkwargs={"optimizerkwargs": {"learning_rate": 1e-4}}
+    #              )
+    # my_exp.start()
+    # sys.exit("done for now")
 
     # test multiple input and multiple output
     # for now only tfrecords

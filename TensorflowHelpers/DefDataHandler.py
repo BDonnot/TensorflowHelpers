@@ -7,6 +7,7 @@ import pdb
 
 #TODO make this class more compliant with the other version
 class ExpDataReader:
+    ms_tensor=True # is the 'ms' field a tensor or a numpy array
     def __init__(self, train, batch_size):
         """Read the usefull data for the Experience to run
         Store both input and outputs
@@ -49,7 +50,7 @@ class ExpDataReader:
         """
         pass
 
-#TODO refactor ExpCSVDataReader and ExpTFrecordDataReader
+# TODO refactor ExpCSVDataReader and ExpTFrecordDataReader
 # TODO at least _nrows, _ncols and _shape_properly are copy paste.
 # TODO beside the logic is exactly the same!
 class ExpCSVDataReader(ExpDataReader):
@@ -223,7 +224,6 @@ class ExpCSVDataReader(ExpDataReader):
 class ExpTFrecordsDataReader(ExpDataReader):
     def __init__(self, train, batch_size, pathdata=".",
                  filename="data.tfrecord",
-                 vars={"input", "output"},
                  sizes={"input":1, "output":1},
                  num_thread=4,
                  ms=None, sds=None):
@@ -245,7 +245,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
         self.sizes = sizes
         self.num_thread = num_thread
         self.batch_size = batch_size
-
+        self.features = {k: tf.FixedLenFeature((val,), tf.float32, default_value=[0.0 for _ in range(val)])
+                    for k, val in sizes.items()}
         # TODO optimization: do not parse the file if you nrows (training set parsed 2 times)
         # count the number of lines
         if (ms is None) or (sds is None):
@@ -256,8 +257,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
         ms_, sds_, self.nrows = fun_process(
             path=pathdata, fn=filename, sizes=sizes)
 
-        self.ms = self._shape_properly(ms_) if ms is None else ms
-        self.sds = self._shape_properly(sds_) if sds is None else sds
+        self.ms = self._shape_properly(ms_, name="means") if ms is None else ms
+        self.sds = self._shape_properly(sds_, name="stds") if sds is None else sds
 
         self.dataset = tf.contrib.data.TFRecordDataset(
             [os.path.join(pathdata, filename)]).map(
@@ -295,9 +296,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
         :param stds: 
         :return: 
         """
-        features = {k: tf.FixedLenFeature((val,), tf.float32, default_value=[0.0 for _ in range(val)])
-                    for k, val in sizes.items()}
-        parsed_features = tf.parse_single_example(example_proto, features)
+        parsed_features = tf.parse_single_example(example_proto, self.features)
         for k in sizes.keys():
             parsed_features[k] = parsed_features[k] - ms[k]
             parsed_features[k] = parsed_features[k]/stds[k]
@@ -356,13 +355,14 @@ class ExpTFrecordsDataReader(ExpDataReader):
                 stds[k][stds[k] <= 1e-3] = 1.0
         return ms, stds, count
 
-    def _shape_properly(self, ms):
+    def _shape_properly(self, ms, name):
         """
         Transform a dictionnary of numpy array in a dictionnary of tensorflow tensor
         :param ms: 
+        :param name: 
         :return: 
         """
-        return {k: tf.convert_to_tensor(v, name="mean_{}".format(k), dtype=tf.float32) for k, v in ms.items()}
+        return {k: tf.convert_to_tensor(v, name="{}_{}".format(name, k), dtype=tf.float32) for k, v in ms.items()}
 
     def _nrows(self, array):
         """
@@ -371,9 +371,10 @@ class ExpTFrecordsDataReader(ExpDataReader):
         """
         return self.nrows
 
+
 class ExpData:
     def __init__(self, batch_size=50, sizemax=int(1e4),
-                 pathdata=".",
+                 pathdata=".", path_exp=".",
                  classData=ExpDataReader,
                  sizes={"input":1, "output":1},
                  argsTdata=(), kwargsTdata={},
@@ -383,6 +384,7 @@ class ExpData:
         """ The base class for every 'data' subclasses, depending on the problem
         :param batch_size: the size of the minibatch
         :param pathdata: the path where data are stored
+        :param path_exp: the path where the experiment is saved
         :param sizemax: maximum size of data chunk that will be "fed" to the computation graph
         :param classData: the class of data (should derive from 'ExpDataReader')
         :param sizes: the sizes (number of columns) of each dataset
@@ -392,12 +394,22 @@ class ExpData:
         :param kwargsVdata: keywords arguments to build an instance of class 'expDataReader' (build the validation data set)
         :param otherdsinfo : dictionnaries of keys = dataset name, values = dictionnaries of keys: "argsdata" : tuple, kwargsdata: dictionnaries
         """
+
+        # subdirectory name of the experiment where means and std will be stored
+        self.means_vars_directory = "means_vars"
+        self.path_exp = path_exp
+        self.sizes = sizes
+        ms, sds = self._load_npy_means_stds(classData)
+        self.classData = classData
+
         # the data for training (fitting the models parameters)
-        self.trainingData = classData(pathdata=pathdata,
-                                      *argsTdata,
+        self.trainingData = classData(*argsTdata,
+                                      pathdata=pathdata,
                                       sizes=sizes,
                                       train=True,
                                       batch_size=batch_size,
+                                      ms=ms,
+                                      sds=sds,
                                       **kwargsTdata)
         # get the values of means and standard deviation of the training set,
         # to be use in the others sets
@@ -405,8 +417,8 @@ class ExpData:
         self.sds = self.trainingData.sds
         # the data for training (only used when reporting error on the whole
         # set)
-        self.trainData = classData(pathdata=pathdata,
-                                   *argsTdata,
+        self.trainData = classData(*argsTdata,
+                                   pathdata=pathdata,
                                    sizes=sizes,
                                    train=False,
                                    batch_size=sizemax,
@@ -415,8 +427,8 @@ class ExpData:
                                    **kwargsTdata)
         # the data for validation set (fitting the models hyper parameters --
         # only used when reporting error on the whole set)
-        self.valData = classData(pathdata=pathdata,
-                                 *argsVdata,
+        self.valData = classData(*argsVdata,
+                                 pathdata=pathdata,
                                  sizes=sizes,
                                  train=False,
                                  batch_size=sizemax,
@@ -432,7 +444,7 @@ class ExpData:
 
         self.true_data = self.iterator.get_next(
             name="true_data")
-
+        # pdb.set_trace()
         self.training_init_op = self.iterator.make_initializer(
             self.trainingData.dataset)
         self.train_init_op = self.iterator.make_initializer(
@@ -453,6 +465,50 @@ class ExpData:
                                                         **values["kwargsdata"]
                                                         )
             self.otheriterator_init[otherdsname] = self.iterator.make_initializer(self.otherdatasets[otherdsname].dataset)
+
+    def _load_npy_means_stds(self, classData):
+        """
+        If the means and variance have already been computed, it will load them from the hard drive
+        :param classData: the data class used
+        :return: ms, sds with
+        ms = None if data does not exists, otherwise the dictionnary of means for each variable in "sizes"
+        """
+
+        if not os.path.exists(os.path.join(self.path_exp, self.means_vars_directory)):
+            return None, None
+        else:
+            isOk = True
+            for k in self.sizes.keys():
+                mE = os.path.exists(os.path.join(self.path_exp, self.means_vars_directory, "ms-{}.npy".format(k)))
+                sE = os.path.exists(os.path.join(self.path_exp, self.means_vars_directory, "sds-{}.npy".format(k)))
+                if not mE or not sE:
+                    isOk = False
+                    break
+            if not isOk:
+                return None, None
+            else:
+                ms = {}
+                sds = {}
+                for k in self.sizes.keys():
+                    m = np.load(os.path.join(self.path_exp, self.means_vars_directory, "ms-{}.npy".format(k)))
+                    s = np.load(os.path.join(self.path_exp, self.means_vars_directory, "sds-{}.npy".format(k)))
+                    ms[k] = m
+                    sds[k] = s
+                # pdb.set_trace()
+                if classData.ms_tensor:
+                    ms = self._shape_properly(ms, name="means")
+                    sds = self._shape_properly(sds, name="stds")
+                return ms, sds
+
+    def _shape_properly(self, ms, name):
+        """
+        TODO copy paste from TFDataReader
+        Transform a dictionnary of numpy array in a dictionnary of tensorflow tensor
+        :param name
+        :param ms: 
+        :return: 
+        """
+        return {k: tf.convert_to_tensor(v, name="{}_{}".format(name, k), dtype=tf.float32) for k, v in ms.items()}
 
     def getnrows(self):
         """
@@ -570,7 +626,7 @@ class ExpData:
                 name, minibatchnum, acc_loss))
         return error_nan, acc_loss
 
-    def getpred(self, sess, graph, varsname):
+    def getpred(self, sess, graph, varsname, dataset_name=None):
         """
         :param sess: a tensorflow session
         :param graph: an object of class 'ExpGraph' or one of its derivatives
@@ -578,14 +634,19 @@ class ExpData:
         :return: the prediction for the validation test (rescaled, and "un preprocessed" (eg directly comparable to the original data) ) 
         :return: the original data
         :return: the predictions takes the form of a dictionnary k: name, value: value predicted
+        :param dataset_name: on which dataset you want to compute it. If not none, the proper initialization operator must be called beforehand
         """
         #TODO why is it in data ?
-        res = {k: np.zeros(shape=(self.valData.nrowsX(), int(self.ms[k].shape[0]))) for k in varsname}
-        orig = {k: np.zeros(shape=(self.valData.nrowsX(), int(self.ms[k].shape[0]))) for k in varsname}
-        sess.run(self.validation_init_op)
+        if dataset_name is None:
+            dataset = self.valData
+            initop = self.validation_init_op
+        else:
+            dataset = self.otherdatasets[dataset_name]
+            initop = self.otheriterator_init[dataset_name]
+        res = {k: np.zeros(shape=(dataset.nrowsX(), int(self.ms[k].shape[0]))) for k in varsname}
+        orig = {k: np.zeros(shape=(dataset.nrowsX(), int(self.ms[k].shape[0]))) for k in varsname}
+        sess.run(initop)
         previous = 0
-        sds = sess.run(self.sds)
-        ms = sess.run(self.ms)
         while True:
             # TODO GD here : check that the "huge batch" concern the same
             # TODO disconnected quad
@@ -599,13 +660,13 @@ class ExpData:
                     tmp = preds[0][k]
                     size = tmp.shape[0]
                     # rescale it ("un preprossed it")
-                    tmp = tmp*sds[k]+ms[k]
+                    tmp = tmp*self.sds[k]+self.ms[k]
                     # storing it in res
                     res[k][previous:(previous+size), :] = tmp
 
                     tmp = preds[1][k]
                     # rescale it ("un preprossed it")
-                    tmp = tmp * sds[k] + ms[k]
+                    tmp = tmp * self.sds[k] + self.ms[k]
                     # storing it in res
                     orig[k][previous:(previous + size), :] = tmp
 
@@ -655,6 +716,19 @@ class ExpData:
         :param sess:
         """
         sess.run(self.training_init_op)
+        if self.classData.ms_tensor:
+            # the data class represents the means and standard deviation as tensors
+            self.sds = sess.run(self.sds)
+            self.ms = sess.run(self.ms)
+        if not os.path.exists(os.path.join(self.path_exp, self.means_vars_directory)):
+            os.mkdir(os.path.join(self.path_exp, self.means_vars_directory))
+        # pdb.set_trace()
+        for k in self.sizes.keys():
+            np.save(file=os.path.join(self.path_exp, self.means_vars_directory, "ms-{}.npy".format(k)),
+                    arr=self.ms[k])
+            np.save(file=os.path.join(self.path_exp, self.means_vars_directory, "sds-{}.npy".format(k)),
+                    arr=self.sds[k])
+
 
     def computetensorboard_annex(self, sess, writers, graph, xval, minibatchnum, name):
         """
@@ -680,6 +754,96 @@ class ExpData:
             sess=sess, graph=graph, writer=writers.tfwriter.othersavers[name], xval=xval,
             minibatchnum=minibatchnum, train=False, name=name, textlogger=writers.logger)
         sess.run(self.training_init_op)
+
+import random
+class ExpNpyDataReader(ExpDataReader):
+    ms_tensor = False # is the "self.ms" (or "self.sds") a tensor (True) or a numpy array (False)
+    def __init__(self, train, batch_size, pathdata=".",
+                 filenames={"input": "X.npy" , "output": ("Y.npy",)},
+                 sizes={"input":1, "output":1},
+                 num_thread=4,
+                 ms=None, sds=None):
+
+        self.train = train
+        self.datasets = {k: np.load(os.path.join(pathdata, v)) for k,v in filenames.items()}
+        # pdb.set_trace()
+        if ms is None:
+            self.ms = {k: np.mean(v, axis=0) for k,v in self.datasets.items()}
+        else:
+            self.ms = ms
+        if sds is None:
+            self.sds = {k: np.std(v, axis=0) for k,v in self.datasets.items()}
+        else:
+            self.sds = sds
+
+        self.datasets = {k: (v-self.ms[k])/self.sds[k] for k, v in self.datasets.items()}
+        # self.placeholders = {k: tf.placeholder(shape=(None, v), dtype=tf.float32) for k,v in sizes.items()}
+
+        self.batch_size = batch_size
+        self.nrows = self.datasets[next(iter(filenames.keys()))].shape[0]
+        self.indexDataMinibatch = list(range(self.nrows))
+        if self.train:
+            random.shuffle(self.indexDataMinibatch)
+        self.lastIndexDataMinibatch = 0
+        self.train = train
+        self.features = {k: tf.FixedLenFeature(val, tf.float32)#, default_value=[0.0 for _ in range(val)])
+                            for k, val in sizes.items()}
+
+        self.dataset = tf.data.Dataset.from_generator(generator=self.generator,
+                                                      output_types={k:v.dtype for k, v in self.features.items()},
+                                                      output_shapes={k: v.shape for k, v in self.features.items()})
+        if train:
+            self.dataset = self.dataset.repeat(-1)
+            # self.dataset = self.dataset.shuffle(buffer_size=10000)
+        else:
+            self.dataset = self.dataset.repeat(1)
+        self.dataset = self.dataset.batch(batch_size=batch_size)
+        # pdb.set_trace()
+
+    def generator(self):
+        """
+        :return: the data of one line of the dataset
+        """
+        new_epoch = False
+        while not new_epoch:
+            new_epoch, indx = self.getnextindexes()
+            yield {k: v[indx, :].flatten() for k, v in self.datasets.items()}
+        raise StopIteration
+
+    def getnextindexes(self):
+        """
+        :return: the next index to be considered 
+        """
+        size = 1
+        new_epoch = False
+        if self.lastIndexDataMinibatch+size <= self.nrows:
+            prev = self.lastIndexDataMinibatch
+            self.lastIndexDataMinibatch += size
+            res = self.indexDataMinibatch[prev:self.lastIndexDataMinibatch]
+        else:
+            new_epoch = True
+            prev = self.lastIndexDataMinibatch
+            res = self.indexDataMinibatch[prev:]
+            if self.train:
+                random.shuffle(self.indexDataMinibatch)
+            self.lastIndexDataMinibatch = size-len(res)
+            res += self.indexDataMinibatch[:self.lastIndexDataMinibatch]
+        return new_epoch, res
+
+    def init(self, sess):
+        """
+        :param sess: 
+        :return: 
+        """
+        # tf.train.start_queue_runners(sess=sess)
+        pass
+
+    def nrowsX(self):
+        """
+        :return: The number of rows / examples of the input data set
+        """
+        return self.nrows
+
 
 if __name__=="__main__":
     test_tf_nb_lines = ExpTFrecordsDataReader(train=True, batch_size=1)
