@@ -192,7 +192,6 @@ class ExpLogger:
         computed = False
         error_nan = False
         loss_ = np.NaN
-
         if forcesaving or (
                 minibatchnum %
                 self.params.save_minibatch_loss == 0):
@@ -551,6 +550,7 @@ class ExpModel:
         timesaving = tmp.total_seconds()  # ellapsed time saving data, in seconds
 
         self.exp_params.minibatchnum += 1
+        # print(self.exp_params.minibatchnum)
         newepoch = self.exp_params.minibatchnum % self.exp_params.epochsize == 0
         return newepoch, is_error_nan, losscomputed, valloss, timedata, timeTrain, timesaving
 
@@ -797,6 +797,7 @@ class Exp:
         self.data = None
         with tf.variable_scope("datareader"):
             self.data = dataClass(
+                batch_size=parameters.batch_size,
                 pathdata=parameters.pathdata,
                 otherdsinfo=otherdsinfo,
                 *dataargs,
