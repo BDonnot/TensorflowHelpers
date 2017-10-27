@@ -349,9 +349,9 @@ class ExpSaverParam:
                  num_savings=100,
                  num_savings_minibatch=500,
                  num_savings_model=20,
-                 epochsize=1,
+                 # epochsize=1,
                  saveEachEpoch=False,
-                 minibatchnum=0,
+                 # minibatchnum=0,
                  batch_size=1,
                  num_epoch=1,
                  continue_if_exists=False):
@@ -369,9 +369,9 @@ class ExpSaverParam:
         :param num_savings: the number of time you save the error on total training set and total validation set
         :param num_savings_minibatch: the number of times you save the error on the last minibatches computed
         :param num_savings_model: number of times the models are saved
-        :param epochsize: the size of an epoch in terms of minibatches
+        # :param epochsize: the size of an epoch in terms of minibatches
         :param saveEachEpoch: do you want to force the savings at each epoch
-        :param minibatchnum: the number of minibatches computed
+        # :param minibatchnum: the number of minibatches computed
         :param batch_size: the size of one training minibatch
         :param num_epoch: the number of epoch to run
         :param continue_if_exists: if the folder exists, stop do not run the expriment
@@ -388,10 +388,10 @@ class ExpSaverParam:
         self.save_minibatch_loss = 0
         self.num_savings_model = num_savings_model
         self.save_model = 0
-        self.epochsize = epochsize
+        self.epochsize = 0
         self.saveEachEpoch = saveEachEpoch
         self.name_model = name_exp
-        self.minibatchnum = minibatchnum
+        self.minibatchnum = 0
         self.batch_size = batch_size
         self.name_exp_with_path = os.path.join(self.path, self.name_model)
         self.path_saver = os.path.join(self.name_exp_with_path, "TFInfo")
@@ -405,12 +405,22 @@ class ExpSaverParam:
         :param nrows: total number of rows of the training dataset
         :return:
         """
-        self.epochsize = nrows // self.batch_size  # number of minibatches per epoch
+        #TODO display warnings when the number should be set to 1
+        self.epochsize = round(nrows/self.batch_size)  # number of minibatches per epoch
+        # pdb.set_trace()
+        if self.epochsize == 0:
+            self.epochsize = 1
         self.total_minibatches = self.epochsize * self.num_epoch  # total number of minibatches
         # save the loss each "self.save_loss" minibatches
-        self.save_loss = self.total_minibatches // self.num_savings
-        self.save_minibatch_loss = self.total_minibatches // self.num_savings_minibatch
-        self.save_model = self.total_minibatches // self.num_savings_model
+        self.save_loss = round(self.total_minibatches / self.num_savings)
+        if self.save_loss == 0:
+            self.save_loss = 1
+        self.save_minibatch_loss = round(self.total_minibatches / self.num_savings_minibatch)
+        if self.save_minibatch_loss == 0:
+            self.save_minibatch_loss = 1
+        self.save_model = round(self.total_minibatches / self.num_savings_model)
+        if self.save_model == 0:
+            self.save_model = 1
 
 
 class ExpModel:
@@ -437,7 +447,6 @@ class ExpModel:
         # :param graphType: the type of "ExpGraphOneXOneY" to use
         # :param pars: the dictionnary of hyper parameters of the mdoels
         """
-
         self.lossfun = lossfun
         self.optimizerClass = optimizerClass
         self.exp_params = exp_params
@@ -789,8 +798,22 @@ class Exp:
                 str_ += " when you build the parameters of the experiments (object of class ExpSaverParam)"
                 raise RuntimeError(str_.format(self.path))
 
-        # TODO
+
         self.startfromscratch = startfromscratch  # do I start the experiments from scratch
+        # save the parameters of the experiments
+        if self.startfromscratch:
+            self.path_saveparamexp = os.path.join(self.path, "parameters")
+            if not os.path.exists(self.path_saveparamexp):
+                os.mkdir(self.path_saveparamexp)
+            with open(os.path.join(self.path_saveparamexp, "parameters.json"), "w") as f:
+                json.dump(parameters.__dict__, fp=f, sort_keys=True, indent=4)
+            self._saveinfos(name="data_related",classType=dataClass,
+                           args=dataargs, kwargs=datakwargs)
+            self._saveinfos(name="graph_related",classType=graphType,
+                           args=graphargs, kwargs=graphkwargs)
+            self._saveinfos(name="model_related",classType=modelType,
+                           args=modelargs, kwargs=modelkwargs)
+
 
         # 1. load the data
         #TODO try to load the ms and sds from previous graph if self.startfromscratch is False
@@ -803,12 +826,6 @@ class Exp:
                 path_exp=self.path,
                 otherdsinfo=otherdsinfo,
                 **datakwargs)
-
-
-        # if not self.startfromscratch:
-        #     self.parameters.saver = tf.train.import_meta_graph(os.path.join(self.path, "TFInfo", "ModelTrained_best.meta"))
-        # else:
-        # self.parameters.saver = tf.train.Saver()
 
         # 2. build the graph or load the graph
         self.graph = None
@@ -834,24 +851,42 @@ class Exp:
         # 5. defines other quantities needed for additionnal data
         self.timedata = 0  # time to get the data
         self.trainingsteps = 0  # total number of training steps computed
-        # self.minibatchnum = 0 # total number of minibatches computed ( #TODO
-        # is this the same ?)
         self.timeTrain = 0  # total time spent to train the model
         self.timesaving = 0  # ellapsed time saving data, in seconds
         self.valloss = []  # the loss on the validation set
 
-    def start(self):  # TODO log beginning, and graph restoring
-        """
-        Run the entire experiments.
-        :return:
-        """
-        is_error_nan = False
+        self.is_initialized = False
 
+    def _saveinfos(self, name, classType, args, kwargs):
+        """
+        Save some information about data. Not to use outside the class
+        :param name: 
+        :param classType: 
+        :param args: 
+        :param kwargs: 
+        :return: 
+        """
+        with open(os.path.join(self.path_saveparamexp, "{}.json".format(name)), "w") as f:
+            dd = {}
+            dd["classType"] = str(classType)
+            dd["args"] = [str(el) for el in args]
+            dd.update({str(k): str(v) for k, v in kwargs.items()})
+            json.dump(dd, fp=f, sort_keys=True, indent=4)
+
+    def _initialize(self):
+        """
+        Initialize the model, should not be used from outside the class
+        :return: 
+        """
+        if self.is_initialized:
+            return
         # 1. init the variables
         if self.startfromscratch:
             # log the beginning
             self.logbeginning()
             self.sess.run(tf.global_variables_initializer())
+            with open(os.path.join(self.path_saveparamexp, "parameters.json"), "w") as f:
+                json.dump(self.parameters.__dict__, fp=f, sort_keys=True, indent=4)
         else:
             self.parameters.saver = tf.train.Saver()
             # get the value of the best variable saved
@@ -866,6 +901,17 @@ class Exp:
         # 2. init the weight normalization, if needed
         if self.startfromscratch:
             self.graph.initwn(self.sess)
+        self.is_initialized = True
+
+
+    def start(self):  # TODO log beginning, and graph restoring
+        """
+        Run the entire experiments.
+        :return:
+        """
+
+        self._initialize()
+        is_error_nan = False
 
         # 4. launch the computation
         for epochnum in range(self.parameters.num_epoch):
@@ -1005,10 +1051,15 @@ class Exp:
                 dict_saved[key] = val
             json.dump(dict_saved, f, sort_keys=True, indent=4)
 
-    def getpred(self, dsname=None):
+    def getpred(self, dsname=None, includeinput=False):
         """
         :param dsnam: the name of the dataset you want to get the error from (none=validation dataset)
+        :param includeinput: include the "prediction" for input data also
         :return: 2 dictionnaries: one containing the prediction, the second the true values
         """
-        return self.data.getpred(self.sess, self.graph, self.graph.outputname, dataset_name=dsname)
+        self._initialize()
+        varname = self.graph.outputname
+        if includeinput:
+            varname = varname | self.graph.inputname
+        return self.data.getpred(self.sess, self.graph, varname, dataset_name=dsname)
 

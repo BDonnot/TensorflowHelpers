@@ -299,6 +299,20 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.mergedsummaryvar = None
         self.loss = None
 
+
+    def initwn(self, sess):
+        """
+        Initialize the weights for weight normalization
+        :param sess: a tensorflow session
+        :return: 
+        """
+        res = 0
+        for _,v in self.encoders.items():
+            v.initwn(sess=sess)
+        self.nn.initwn(sess=sess)
+        for _,v in self.decoders.items():
+            v.initwn(sess=sess)
+
     def get_true_output_dict(self):
         """
         :return: the output data dictionnary. key: varname, value=true value of this data

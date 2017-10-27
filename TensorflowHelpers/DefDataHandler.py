@@ -401,7 +401,7 @@ class ExpData:
         self.sizes = sizes
         ms, sds = self._load_npy_means_stds(classData)
         self.classData = classData
-
+        # pdb.set_trace()
         # the data for training (fitting the models parameters)
         self.trainingData = classData(*argsTdata,
                                       pathdata=pathdata,
@@ -637,9 +637,12 @@ class ExpData:
         :param dataset_name: on which dataset you want to compute it. If not none, the proper initialization operator must be called beforehand
         """
         #TODO why is it in data ?
-        if dataset_name is None:
+        if dataset_name is None or dataset_name == "val" or dataset_name=="Val":
             dataset = self.valData
             initop = self.validation_init_op
+        elif dataset_name == "Train" or dataset_name == "train":
+            dataset = self.trainData
+            initop = self.train_init_op
         else:
             dataset = self.otherdatasets[dataset_name]
             initop = self.otheriterator_init[dataset_name]
@@ -657,7 +660,12 @@ class ExpData:
                 size = 0
                 for k in res.keys():
                     # getting the prediction
-                    tmp = preds[0][k]
+                    if k in preds[0]:
+                        # this is an output variable, it is computed from the graph
+                        tmp = preds[0][k]
+                    else:
+                        # k is an input variable, no chance to have it from the graph output!
+                        tmp = preds[1][k]
                     size = tmp.shape[0]
                     # rescale it ("un preprossed it")
                     tmp = tmp*self.sds[k]+self.ms[k]
