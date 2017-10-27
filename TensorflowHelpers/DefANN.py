@@ -319,7 +319,7 @@ class NNFully:
         # with tf.variable_scope("last_dense_layer", reuse=reuse):
         self.output = layerClass(input=z, size=outputsize, relu=False, bias=bias,
                                  guided_dropconnect_mask=None, weight_normalization=weightnorm,
-                                 layernum="last", **kwardslayer)
+                                 layernum="last", keep_prob=None)
         self.pred = tf.identity(self.output.res, name="output")
 
     def getnbparam(self):
