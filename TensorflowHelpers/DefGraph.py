@@ -209,7 +209,9 @@ class ExpGraph(ExpGraphOneXOneY):
 class ComplexGraph(ExpGraphOneXOneY):
     def __init__(self, data, outputsize, var_x_name={"input"}, var_y_name={"output"},
                  nnType=NNFully, argsNN=(), kwargsNN={},
-                 encDecNN=NNFully, args_enc_dec=(), kwargs_enc_dec={},
+                 encDecNN=NNFully, args_enc=(), kwargs_enc={},
+                 args_dec=(), kwargs_dec={},
+                 kwargs_enc_dec=None,
                  sizes = {"input": 1}):
         """
         This class can deal with multiple input/output.
@@ -230,7 +232,10 @@ class ComplexGraph(ExpGraphOneXOneY):
         :param args forwarded to the initializer of neural network
         :param kwargsNN: key word arguments forwarded to the initializer of neural network
         :param encDecNN: class to use to build the neural networks for encoding / decoding
-        :param args_enc_dec:
+        :param args_enc:
+        :param kwargs_enc: 
+        :param args_dec:
+        :param kwargs_dec: 
         :param kwargs_enc_dec: 
         :param sizes: the size output by the encoder for each input variable. Dictionnary with key: variable names, value: size
         :param outputsize: the output size for the intermediate / main neural network
@@ -241,6 +246,11 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.inputname = var_x_name
         self.data = data
 
+        if kwargs_enc_dec is not None:
+            # TODO make this usage deprecated
+            # TODO raise an error if kwargs_enc or kwargs_dec not "empty"
+            kwargs_enc = kwargs_enc_dec
+            kwargs_dec = kwargs_enc_dec
         # dictionnary of "ground truth" data
         self.true_dataY = {k: self.data[k] for k in self.outputname}
         self.true_dataX = {k: self.data[k] for k in self.inputname}
@@ -256,10 +266,10 @@ class ComplexGraph(ExpGraphOneXOneY):
             for varname in sorted(self.inputname):
                 with tf.variable_scope(varname):
                     size_out = sizes[varname]
-                    tmp = encDecNN(input=self.data[varname],
+                    tmp = encDecNN(*args_enc,
+                                   input=self.data[varname],
                                    outputsize=size_out,
-                                   *args_enc_dec,
-                                   **kwargs_enc_dec)
+                                   **kwargs_enc)
                     self.encoders[varname] = tmp
                     self.outputEnc[varname] = tmp.pred
 
@@ -283,10 +293,10 @@ class ComplexGraph(ExpGraphOneXOneY):
             for varname in sorted(self.outputname):
                 with tf.variable_scope(varname):
                     # size_out = sizes[varname]
-                    tmp = encDecNN(input=self.nn.pred,
+                    tmp = encDecNN(*args_dec,
+                                   input=self.nn.pred,
                                    outputsize=int(self.data[varname].get_shape()[1]),
-                                   *args_enc_dec,
-                                   **kwargs_enc_dec)
+                                   **kwargs_dec)
                     self.decoders[varname] = tmp
                     self.outputDec[varname] = tmp.pred
                     self.size_out += int(tmp.pred.get_shape()[1])
@@ -306,7 +316,6 @@ class ComplexGraph(ExpGraphOneXOneY):
         :param sess: a tensorflow session
         :return: 
         """
-        res = 0
         for _,v in self.encoders.items():
             v.initwn(sess=sess)
         self.nn.initwn(sess=sess)

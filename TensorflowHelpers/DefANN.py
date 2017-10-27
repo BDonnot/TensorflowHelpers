@@ -161,20 +161,23 @@ class ResidualBlock:
                 self.nbparams += self.second_layer.nbparams
 
             # treating "-> X + ."
-            self.res = self.second_layer.res + input
+
+            if keep_prob is not None:
+                #TODO : copy pasted from DenseLayer
+                tmp = tf.nn.dropout(self.second_layer.res, keep_prob=keep_prob, name="applying_dropout")
+                # we consider that generating random number count for 1 operation
+                self.flops += size  # generate the "size" real random numbers
+                self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
+                self.flops += size  # element wise multiplication with res
+            else:
+                tmp = self.second_layer.res
+
+            self.res = tmp + input
             self.flops += int(self.res.get_shape()[1])
 
             if relu:
                 self.res = tf.nn.relu(self.res, name="applying_relu")
                 self.flops += size  # we consider relu of requiring 1 computation per number (one max)
-
-            if keep_prob is not None:
-                #TODO : copy pasted from DenseLayer
-                self.res = tf.nn.dropout(self.res, keep_prob=keep_prob, name="applying_dropout")
-                # we consider that generating random number count for 1 operation
-                self.flops += size  # generate the "size" real random numbers
-                self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
-                self.flops += size  # element wise multiplication with res
 
 
     def initwn(self, sess, scale_init=1.0):
