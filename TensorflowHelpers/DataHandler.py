@@ -1,9 +1,11 @@
-import numpy as np
-import tensorflow as tf
+import random
 import datetime
 import os
 
 import pdb
+
+import numpy as np
+import tensorflow as tf
 
 #TODO make this class more compliant with the other version
 class ExpDataReader:
@@ -763,7 +765,7 @@ class ExpData:
             minibatchnum=minibatchnum, train=False, name=name, textlogger=writers.logger)
         sess.run(self.training_init_op)
 
-import random
+
 class ExpNpyDataReader(ExpDataReader):
     ms_tensor = False # is the "self.ms" (or "self.sds") a tensor (True) or a numpy array (False)
     def __init__(self, train, batch_size, pathdata=".",
@@ -773,7 +775,8 @@ class ExpNpyDataReader(ExpDataReader):
                  ms=None, sds=None):
 
         self.train = train
-        self.datasets = {k: np.load(os.path.join(pathdata, v)) for k,v in filenames.items()}
+        mmap_mode = None if train else "c"  # "c" stand for: data are kept on the hard drive, but can be modified in memory
+        self.datasets = {k: np.load(os.path.join(pathdata, v), mmap_mode=mmap_mode) for k, v in filenames.items()}
         # pdb.set_trace()
         if ms is None:
             self.ms = {k: np.mean(v, axis=0) for k,v in self.datasets.items()}
@@ -798,7 +801,7 @@ class ExpNpyDataReader(ExpDataReader):
                             for k, val in sizes.items()}
 
         self.dataset = tf.data.Dataset.from_generator(generator=self.generator,
-                                                      output_types={k:v.dtype for k, v in self.features.items()},
+                                                      output_types={k: v.dtype for k, v in self.features.items()},
                                                       output_shapes={k: v.shape for k, v in self.features.items()})
         if train:
             self.dataset = self.dataset.repeat(-1)

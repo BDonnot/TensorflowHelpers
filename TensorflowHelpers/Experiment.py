@@ -15,9 +15,9 @@ import numpy as np
 # from tqdm import tqdm
 import tensorflow as tf
 
-from .DefANN import NNFully
-from .DefDataHandler import ExpData
-from .DefGraph import ExpGraphOneXOneY
+from .ANN import NNFully
+from .DataHandler import ExpData
+from .Graph import ExpGraphOneXOneY
 
 TRAINING_COLLECTION_NAME = "train_op"
 NAMESAVEDTFVARS = 'savedvars'

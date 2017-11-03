@@ -2,7 +2,7 @@ import pdb
 
 import tensorflow as tf
 
-from .DefANN import NNFully
+from .ANN import NNFully
 
 class ExpGraphOneXOneY:
     def __init__(self, data, var_x_name="input", var_y_name="output", nnType=NNFully, argsNN=(), kwargsNN={},
