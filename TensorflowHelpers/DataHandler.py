@@ -59,7 +59,7 @@ class ExpCSVDataReader(ExpDataReader):
     def __init__(self, train, batch_size, pathdata=".",
                  filenames={"input": "X.csv", "output": "Y.csv"},
                  sizes={"input":1, "output":1},
-                 num_thread=4,
+                 num_thread=4, donnotcenter={},
                  ms=None, sds=None):
         """
         :param train: if true concern the training set
@@ -69,6 +69,7 @@ class ExpCSVDataReader(ExpDataReader):
         :param sizes: number of columns of the data in X and Y [should be a 2 keys dictionnaries with keys "input" and "output"]
         :param other_dataset: other files (same format as
         :param num_thread: number of thread to read the data
+        :param donnotcenter: iterable: variable that won't be centered/reduced
         :param ms: means of X data set (used for validation instead -- of recomputing the mean)
         :param sds: standard deviation of Y data set (used for validation -- instead of recomputing the std)
         """
@@ -82,9 +83,20 @@ class ExpCSVDataReader(ExpDataReader):
         else:
             fun_process = self._countlines
 
-        ms_, sds_, self.nrows = fun_process(path=pathdata, fns=filenames, sizes=sizes)
+        ms__, sds__, self.nrows = fun_process(path=pathdata, fns=filenames, sizes=sizes)
+        ms_ = {}
+        sds_ = {}
+        for k in ms__.keys():
+            if k in donnotcenter:
+                ms_[k] = np.zeros(ms__[k].shape)
+                sds_[k] = np.ones(sds__[k].shape)
+            else:
+                ms_[k] = ms__[k]
+                sds_[k] = sds__[k]
+
         self.ms = self._shape_properly(ms_) if ms is None else ms
         self.sds = self._shape_properly(sds_) if sds is None else sds
+
 
         self.dataX = tf.contrib.data.TextLineDataset(
             [os.path.join(pathdata, filenames[0])]).skip(1).map(
@@ -170,8 +182,8 @@ class ExpCSVDataReader(ExpDataReader):
             error_str += "does not count the same number of lines."
             raise RuntimeError(error_str.format(fns["input"], fns["output"], path))
 
-        ms = {"input": 0., "output": 0.}
-        sds = {"input": 1., "output": 1.}
+        ms = {"input": np.zeros(1), "output": np.zeros(1)}
+        sds = {"input": np.ones(1), "output": np.ones(1)}
         return ms, sds, cX
 
     def _countlines_aux(self, path, fn):
@@ -224,7 +236,8 @@ class ExpCSVDataReader(ExpDataReader):
         return {k: tf.convert_to_tensor(v, name="mean_{}".format(k), dtype=tf.float32) for k, v in ms.items()}
 
 class ExpTFrecordsDataReader(ExpDataReader):
-    def __init__(self, train, batch_size, pathdata=".",
+    def __init__(self, train, batch_size, donnotcenter={},
+                 pathdata=".",
                  filename="data.tfrecord",
                  sizes={"input":1, "output":1},
                  num_thread=4,
@@ -234,6 +247,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
         
         :param train: if true concern the training set
         :param batch_size: number of data to unpack each time
+        :param donnotcenter: iterable: variable that will not be centered / reduced
         :param pathdata: path where the data are stored
         :param filenames: names of the files with input data and output data
         :param sizes: number of columns of the data in X and Y
@@ -256,8 +270,17 @@ class ExpTFrecordsDataReader(ExpDataReader):
         else:
             fun_process = self._countlines
 
-        ms_, sds_, self.nrows = fun_process(
+        ms__, sds__, self.nrows = fun_process(
             path=pathdata, fn=filename, sizes=sizes)
+        ms_ = {}
+        sds_ = {}
+        for k in ms__.keys():
+            if k in donnotcenter:
+                ms_[k] = np.zeros(ms__[k].shape)
+                sds_[k] = np.ones(sds__[k].shape)
+            else:
+                ms_[k] = ms__[k]
+                sds_[k] = sds__[k]
 
         self.ms = self._shape_properly(ms_, name="means") if ms is None else ms
         self.sds = self._shape_properly(sds_, name="stds") if sds is None else sds
@@ -281,8 +304,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
         :param fn: the file name
         :return: the number of lines of the files (must iterate through it line by line) 
         """
-        ms = {el: 0. for el in sizes}
-        sds = {el: 0. for el in sizes}
+        ms = {el: np.zeros(1) for el in sizes}
+        sds = {el: np.ones(1) for el in sizes}
         nb = 0
         fn_ = os.path.join(path, fn)
         for nb, record in enumerate(tf.python_io.tf_record_iterator(fn_)):
@@ -302,7 +325,6 @@ class ExpTFrecordsDataReader(ExpDataReader):
         for k in sizes.keys():
             parsed_features[k] = parsed_features[k] - ms[k]
             parsed_features[k] = parsed_features[k]/stds[k]
-
         return parsed_features
 
     def _normalize(self, path, fn, sizes):
@@ -381,7 +403,8 @@ class ExpData:
                  sizes={"input":1, "output":1},
                  argsTdata=(), kwargsTdata={},
                  argsVdata=(), kwargsVdata={},
-                    otherdsinfo = {}
+                    otherdsinfo = {},
+                 donnotcenter={}
                  ):
         """ The base class for every 'data' subclasses, depending on the problem
         :param batch_size: the size of the minibatch
@@ -395,6 +418,7 @@ class ExpData:
         :param argsVdata: default arguments to build an instance of class 'expDataReader' (build the validation data set)
         :param kwargsVdata: keywords arguments to build an instance of class 'expDataReader' (build the validation data set)
         :param otherdsinfo : dictionnaries of keys = dataset name, values = dictionnaries of keys: "argsdata" : tuple, kwargsdata: dictionnaries
+        :param donnotcenter: data that won't be centered/reduced
         """
 
         # subdirectory name of the experiment where means and std will be stored
@@ -406,6 +430,7 @@ class ExpData:
         # pdb.set_trace()
         # the data for training (fitting the models parameters)
         self.trainingData = classData(*argsTdata,
+                                      donnotcenter=donnotcenter,
                                       pathdata=pathdata,
                                       sizes=sizes,
                                       train=True,
@@ -420,6 +445,7 @@ class ExpData:
         # the data for training (only used when reporting error on the whole
         # set)
         self.trainData = classData(*argsTdata,
+                                   donnotcenter=donnotcenter,
                                    pathdata=pathdata,
                                    sizes=sizes,
                                    train=False,
@@ -430,6 +456,7 @@ class ExpData:
         # the data for validation set (fitting the models hyper parameters --
         # only used when reporting error on the whole set)
         self.valData = classData(*argsVdata,
+                                 donnotcenter=donnotcenter,
                                  pathdata=pathdata,
                                  sizes=sizes,
                                  train=False,
@@ -771,19 +798,36 @@ class ExpNpyDataReader(ExpDataReader):
     def __init__(self, train, batch_size, pathdata=".",
                  filenames={"input": "X.npy" , "output": ("Y.npy",)},
                  sizes={"input":1, "output":1},
-                 num_thread=4,
+                 num_thread=4, donnotcenter={},
                  ms=None, sds=None):
-
+        """
+        
+        :param train: 
+        :param batch_size: 
+        :param pathdata: 
+        :param filenames: 
+        :param sizes: 
+        :param num_thread: 
+        :param donnotcenter: 
+        :param ms: 
+        :param sds: 
+        """
         self.train = train
         mmap_mode = None if train else "c"  # "c" stand for: data are kept on the hard drive, but can be modified in memory
         self.datasets = {k: np.load(os.path.join(pathdata, v), mmap_mode=mmap_mode) for k, v in filenames.items()}
         # pdb.set_trace()
         if ms is None:
-            self.ms = {k: np.mean(v, axis=0) for k,v in self.datasets.items()}
+            ms_ = {k: np.mean(v, axis=0) for k,v in self.datasets.items()}
+            self.ms = {k: v for k,v in ms_ if not k in donnotcenter}
+            for el in donnotcenter:
+                self.ms[el] = np.zeros(ms_[el].shape)
         else:
             self.ms = ms
         if sds is None:
-            self.sds = {k: np.std(v, axis=0) for k,v in self.datasets.items()}
+            sds_ = {k: np.std(v, axis=0) for k,v in self.datasets.items()}
+            self.sds = {k: v for k,v in sds_ if not k in donnotcenter}
+            for el in donnotcenter:
+                self.sds[el] = np.ones(sds_[el].shape)
         else:
             self.sds = sds
 

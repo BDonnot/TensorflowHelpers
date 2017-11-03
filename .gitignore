@@ -9,3 +9,6 @@
 
 # intelligi / pycharm
 .idea/*
+
+# jupyter notebook
+.ipynb_checkpoints/*

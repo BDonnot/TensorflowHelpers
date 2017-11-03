@@ -114,9 +114,9 @@ class ExpGraphOneXOneY:
             fd[el] = data[id]
         return sess.run(toberun, feed_dict=fd)
 
-
 class ExpGraph(ExpGraphOneXOneY):
-    def __init__(self, data, var_x_name={"input"}, var_y_name={"output"}, nnType=NNFully, argsNN=(), kwargsNN={}):
+    def __init__(self, data, var_x_name={"input"}, var_y_name={"output"}, nnType=NNFully, argsNN=(), kwargsNN={},
+                 spec_encoding={}):
         """
         This class can deal with multiple input/output.
         By default, it concatenate all the input variables in one vector, and does the same for the output.
@@ -134,6 +134,7 @@ class ExpGraph(ExpGraphOneXOneY):
         :param nnType: the type of neural network to use
         :param args forwarded to the initializer of neural network
         :param kwargsNN: key word arguments forwarded to the initializer of neural network
+        :param spec_encoding: 
         """
 
         self.data = data  # the dictionnary of data pre-processed as produced by an ExpData instance
@@ -150,8 +151,11 @@ class ExpGraph(ExpGraphOneXOneY):
         prev = 0
         tup = tuple()
         for el in sorted(self.inputname):
-            tup += (self.data[el],)
-            this_size = int(self.data[el].get_shape()[1])
+            if el in spec_encoding:
+                tup += (spec_encoding[el].encode(self.data[el]),)
+            else:
+                tup += (self.data[el],)
+            this_size = int(tup[-1].get_shape()[1])
             self.dimin[el] = (prev, prev+this_size)
             prev += this_size
         self.input = tf.concat(tup, axis=1, name="input_concatenantion")
