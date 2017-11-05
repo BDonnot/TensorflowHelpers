@@ -768,18 +768,18 @@ class Exp:
         Then build the neural networks with ExpGraphOneXOneY, graphargs, graphkwargs
         Then build the comptuation graph (add the loss, savers etc.) : modelType, modelargs, modelkwargs
         Then open a tensorflow session
-        :param parameters:
-        :param dataClass: the class
-        :param dataargs:
-        :param datakwargs:
-        :param graphType:
-        :param graphargs:
-        :param graphkwargs:
-        :param modelType:
-        :param modelargs:
-        :param modelkwargs:
-        :param otherdsinfo:
-        :param startfromscratch: 
+        :param parameters: the experiment parameters (object of class ExpSaverParam)
+        :param dataClass: the class used for building the data handler (ExpData or one of its derivatives -- pass the class, not an object)
+        :param dataargs: arguments used to build the data handler
+        :param datakwargs: key word arguments used to build the data handler
+        :param graphType: the class used for building the computation graph (neural network), for example "ExpGraph" -- pass the class not an object
+        :param graphargs: arguments used to build the computation graph
+        :param graphkwargs: key word arguments used to build the computation graph
+        :param modelType: the type of model abstraction (eg neural network + optimizer + saver) you want to use (for example ExpModel) -- pass the class, not an object
+        :param modelargs: arguments used to build the model abstraction
+        :param modelkwargs: key word arguments used to build the model abstraction
+        :param otherdsinfo: other dataset info, used when you want to save other information during training (dictionnary with key: name of the dataset, value = dictionnary with key = [argsdata, kwargsdata] and value the arguments used to build the data handler for these other datasets (see dataargs and datakwargs)
+        :param startfromscratch: do you start the experiment from scratch, or do you want to reload a previous experiment made.
         """
 
         self.parameters = parameters
@@ -830,8 +830,9 @@ class Exp:
         # 2. build the graph or load the graph
         self.graph = None
         with tf.variable_scope("neuralnetwork"):
-            self.graph = graphType(data=self.data.getdata(),
-                                   *graphargs, **graphkwargs
+            self.graph = graphType(*graphargs,
+                                   data=self.data.getdata(),
+                                   **graphkwargs
                                    )
 
         # 3. add the loss, optimizer and saver

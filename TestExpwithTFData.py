@@ -12,7 +12,7 @@ class SpecificOneVarEncoding:
     def __init__(self):
         pass
 
-    def encode(self, x):
+    def __call__(self, x):
         res = tf.py_func(func=self.onevar_npy, inp=[x], Tout=tf.float32, name="onevar-encoding")
         res.set_shape((x.get_shape()[0], 1))
         return res
@@ -50,60 +50,116 @@ if __name__ == "__main__":
     testfromtfrecords = True
     testloadforecasting = False
     testonevar = True
-
+    testsimplegraph = False
+    testcomplexgraph = True
     if testonevar:
         if testfromtfrecords:
-            # test multiple input and multiple output
-            # for now only tfrecords
-            pathdata = "/home/bdonnot/Documents/PyHades2/tfrecords_118_5000"
-            path_exp = "/home/bdonnot/Documents/PyHades2/Test"
-            sizes = {"prod_p": 54, "prod_q": 54, "prod_v":54,
-                     "loads_p": 99, "loads_q": 99, "loads_v": 99,
-                     "deco_enco": 186,  "flows_MW": 186, "flows_a": 186}
+            if testsimplegraph:
+                # test multiple input and multiple output
+                # for now only tfrecords
+                pathdata = "/home/bdonnot/Documents/PyHades2/tfrecords_118_5000"
+                path_exp = "/home/bdonnot/Documents/PyHades2/Test"
+                sizes = {"prod_p": 54, "prod_q": 54, "prod_v":54,
+                         "loads_p": 99, "loads_q": 99, "loads_v": 99,
+                         "deco_enco": 186,  "flows_MW": 186, "flows_a": 186}
 
-            pathdata = "/home/benjamin/Documents/PyHades2/tfrecords_30_10000"
-            path_exp = "/home/benjamin/Documents/PyHades2/Test"
-            sizes = {"prod_p": 6, "prod_q": 6, "prod_v": 6,
-                     "loads_p": 20, "loads_q": 20,  "loads_v": 20,
-                     "deco_enco": 41, "flows_MW": 41, "flows_a": 41}
+                pathdata = "/home/benjamin/Documents/PyHades2/tfrecords_30_10000"
+                path_exp = "/home/benjamin/Documents/PyHades2/Test"
+                sizes = {"prod_p": 6, "prod_q": 6, "prod_v": 6,
+                         "loads_p": 20, "loads_q": 20,  "loads_v": 20,
+                         "deco_enco": 41, "flows_MW": 41, "flows_a": 41}
 
-            # define the experiment parameters
-            parameters = ExpSaverParam(name_exp="testonevar3",
-                                       path=path_exp,
-                                       pathdata=pathdata,
-                                       num_epoch=1,
-                                       num_savings=1,
-                                       num_savings_minibatch=5,
-                                       num_savings_model=1,
-                                       continue_if_exists=True)
-            var_x_name = {"prod_p", "prod_v", "loads_p", "loads_q", "deco_enco"}
-            var_y_name = {"prod_q", "loads_v", "flows_MW", "flows_a"}
-            kwargsTdata = {"filename": "N1-train_small.tfrecord",
-                           "num_thread": 2}
-            kwargsVdata = {"filename": "N1-val_small.tfrecord",
-                           "num_thread": 2}
-            datakwargs = {"classData": ExpTFrecordsDataReader,
-                          "kwargsTdata": kwargsTdata,
-                          "kwargsVdata": kwargsVdata,
-                          "sizes": sizes,
-                          "donnotcenter": {"deco_enco"}
-            }
-            onevarencoding = SpecificOneVarEncoding()
-            spec_encoding = {"deco_enco": onevarencoding}
-            # spec_encoding = {}
-            # TODO test that the variable in spec_encoding are indeed input variables
-            my_exp = Exp(parameters=parameters,
-                         dataClass=ExpData, datakwargs=datakwargs,
-                         graphType=ExpGraph, graphkwargs={"kwargsNN": {"layersizes": [100, 100], "weightnorm": False},
-                                                          "var_x_name": var_x_name,
-                                                          "var_y_name": var_y_name,
-                                                          "spec_encoding": spec_encoding
-                                                                  },
-                         otherdsinfo={},
-                         startfromscratch=True
-                         )
-            my_exp.start()
-            print(my_exp.sess.run([my_exp.graph.input[:, 0], my_exp.graph.data['deco_enco']]))
+                # define the experiment parameters
+                parameters = ExpSaverParam(name_exp="testonevar_testfromtfrecords_testsimplegraph",
+                                           path=path_exp,
+                                           pathdata=pathdata,
+                                           num_epoch=1,
+                                           num_savings=1,
+                                           num_savings_minibatch=5,
+                                           num_savings_model=1,
+                                           continue_if_exists=True)
+                var_x_name = {"prod_p", "prod_v", "loads_p", "loads_q", "deco_enco"}
+                var_y_name = {"prod_q", "loads_v", "flows_MW", "flows_a"}
+                kwargsTdata = {"filename": "N1-train_small.tfrecord",
+                               "num_thread": 2}
+                kwargsVdata = {"filename": "N1-val_small.tfrecord",
+                               "num_thread": 2}
+                datakwargs = {"classData": ExpTFrecordsDataReader,
+                              "kwargsTdata": kwargsTdata,
+                              "kwargsVdata": kwargsVdata,
+                              "sizes": sizes,
+                              "donnotcenter": {"deco_enco"}
+                }
+                onevarencoding = SpecificOneVarEncoding()
+                spec_encoding = {"deco_enco": onevarencoding}
+                # spec_encoding = {}
+                # TODO test that the variable in spec_encoding are indeed input variables
+                my_exp = Exp(parameters=parameters,
+                             dataClass=ExpData, datakwargs=datakwargs,
+                             graphType=ExpGraph, graphkwargs={"kwargsNN": {"layersizes": [100, 100], "weightnorm": False},
+                                                              "var_x_name": var_x_name,
+                                                              "var_y_name": var_y_name,
+                                                              "spec_encoding": spec_encoding
+                                                                      },
+                             otherdsinfo={},
+                             startfromscratch=True
+                             )
+                my_exp.start()
+                print(my_exp.sess.run([my_exp.graph.input[:, 0], my_exp.graph.data['deco_enco']]))
+            if testcomplexgraph:
+                # test multiple input and multiple output
+                # for now only tfrecords
+                pathdata = "/home/bdonnot/Documents/PyHades2/tfrecords_118_5000"
+                path_exp = "/home/bdonnot/Documents/PyHades2/Test"
+                sizes = {"prod_p": 54, "prod_q": 54, "prod_v":54,
+                         "loads_p": 99, "loads_q": 99, "loads_v": 99,
+                         "deco_enco": 186,  "flows_MW": 186, "flows_a": 186}
+
+                pathdata = "/home/benjamin/Documents/PyHades2/tfrecords_30_10000"
+                path_exp = "/home/benjamin/Documents/PyHades2/Test"
+                sizes = {"prod_p": 6, "prod_q": 6, "prod_v": 6,
+                         "loads_p": 20, "loads_q": 20,  "loads_v": 20,
+                         "deco_enco": 41, "flows_MW": 41, "flows_a": 41}
+
+                # define the experiment parameters
+                parameters = ExpSaverParam(name_exp="testonevar_testfromtfrecords_testcomplexgraph",
+                                           path=path_exp,
+                                           pathdata=pathdata,
+                                           num_epoch=1,
+                                           num_savings=1,
+                                           num_savings_minibatch=5,
+                                           num_savings_model=1,
+                                           continue_if_exists=True)
+                var_x_name = {"prod_p", "prod_v", "loads_p", "loads_q", "deco_enco"}
+                var_y_name = {"prod_q", "loads_v", "flows_MW", "flows_a"}
+                kwargsTdata = {"filename": "N1-train_small.tfrecord",
+                               "num_thread": 2}
+                kwargsVdata = {"filename": "N1-val_small.tfrecord",
+                               "num_thread": 2}
+                datakwargs = {"classData": ExpTFrecordsDataReader,
+                              "kwargsTdata": kwargsTdata,
+                              "kwargsVdata": kwargsVdata,
+                              "sizes": sizes,
+                              "donnotcenter": {"deco_enco"}
+                }
+                onevarencoding = SpecificOneVarEncoding()
+                spec_encoding = {"deco_enco": onevarencoding}
+                # spec_encoding = {}
+                # TODO test that the variable in spec_encoding are indeed input variables
+                my_exp = Exp(parameters=parameters,
+                             dataClass=ExpData, datakwargs=datakwargs,
+                             graphType=ComplexGraph, graphkwargs={"kwargsNN": {"layersizes": [100, 100], "weightnorm": False},
+                                                                  "var_x_name": var_x_name,
+                                                                  "var_y_name": var_y_name,
+                                                                  "spec_encoding": spec_encoding,
+                                                                  "outputsize": 150,
+                                                                  "sizes": sizes
+                                                                      },
+                             otherdsinfo={},
+                             startfromscratch=True
+                             )
+                my_exp.start()
+                # print(my_exp.sess.run([my_exp.graph.input[:, 0], my_exp.graph.data['deco_enco']]))
             # pdb.set_trace()
         print("Done testing 'one-var' data")
         # adding one var encoding
@@ -117,7 +173,7 @@ if __name__ == "__main__":
         pathdata = "/home/benjamin/Documents/PyHades2/ampsdatareal_withreact_30_10000"
         path_exp = "/home/benjamin/Documents/PyHades2/Test"
 
-        parameters = ExpSaverParam(name_exp="firstTestNPYReader",
+        parameters = ExpSaverParam(name_exp="testfromnpy",
                                    path=path_exp,
                                    pathdata=pathdata,
                                    num_epoch=10,
@@ -153,7 +209,7 @@ if __name__ == "__main__":
                                   "var_y_name": var_y_name,
                                   "sizes": sizes_out,
                                   "outputsize": 150,
-                                  "kwargs_enc_dec": {"layerClass": DenseBlock, "kwardslayer": {"nblayer":5}}
+                                  "kwargs_enc_dec": {"layerClass": DenseBlock, "kwardslayer": {"nblayer": 5}}
                                   },
                      otherdsinfo={},#"test": {"argsdata": (), "kwargsdata": {"filename": "conso_locale_test_small.tfrecord"}} },
                      startfromscratch=True,
@@ -176,7 +232,7 @@ if __name__ == "__main__":
             # path_exp = "D:\\Documents\\PyHades2\\Test"
 
             # define the experiment parameters
-            parameters = ExpSaverParam(name_exp="firstTestTFrecords", path=path_exp,
+            parameters = ExpSaverParam(name_exp="testsingledata_testfromcsv", path=path_exp,
                                        pathdata=pathdata)
 
             kwargsTdata = {"filenames": {"input": "conso_X.csv", "ourput": "conso_Y.csv"}, "num_thread": 2}
@@ -202,7 +258,7 @@ if __name__ == "__main__":
             path_exp = "/home/bdonnot/Documents/PyHades2/Test"
 
             # define the experiment parameters
-            parameters = ExpSaverParam(name_exp="firstTestTFrecords",
+            parameters = ExpSaverParam(name_exp="testsingledata_testfromtfrecords",
                                        path=path_exp,
                                        pathdata=pathdata,
                                        num_epoch=1,
@@ -241,7 +297,7 @@ if __name__ == "__main__":
             sizes = {"prod_p": 6, "prod_q": 6, "prod_v": 6, "loads_p": 20, "loads_q": 20,  "loads_v": 20}
 
             # define the experiment parameters
-            parameters = ExpSaverParam(name_exp="firstTestTFrecords",
+            parameters = ExpSaverParam(name_exp="testmultipledata_testfromtfrecords",
                                        path=path_exp,
                                        pathdata=pathdata,
                                        num_epoch=1,
@@ -283,7 +339,7 @@ if __name__ == "__main__":
         path_exp = "/home/bdonnot/Documents/PyHades2/Test"
 
         # define the experiment parameters
-        parameters = ExpSaverParam(name_exp="firstTestConso_small",
+        parameters = ExpSaverParam(name_exp="testloadforecasting",
                                    path=path_exp,
                                    pathdata=pathdata,
                                    num_epoch=10,
