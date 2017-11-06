@@ -52,6 +52,7 @@ if __name__ == "__main__":
     testonevar = True
     testsimplegraph = False
     testcomplexgraph = True
+
     if testonevar:
         if testfromtfrecords:
             if testsimplegraph:
@@ -94,6 +95,7 @@ if __name__ == "__main__":
                 spec_encoding = {"deco_enco": onevarencoding}
                 # spec_encoding = {}
                 # TODO test that the variable in spec_encoding are indeed input variables
+                tf.reset_default_graph()
                 my_exp = Exp(parameters=parameters,
                              dataClass=ExpData, datakwargs=datakwargs,
                              graphType=ExpGraph, graphkwargs={"kwargsNN": {"layersizes": [100, 100], "weightnorm": False},
@@ -146,6 +148,7 @@ if __name__ == "__main__":
                 spec_encoding = {"deco_enco": onevarencoding}
                 # spec_encoding = {}
                 # TODO test that the variable in spec_encoding are indeed input variables
+                tf.reset_default_graph()
                 my_exp = Exp(parameters=parameters,
                              dataClass=ExpData, datakwargs=datakwargs,
                              graphType=ComplexGraph, graphkwargs={"kwargsNN": {"layersizes": [100, 100], "weightnorm": False},
@@ -201,6 +204,7 @@ if __name__ == "__main__":
                       "kwargsVdata": kwargsVdata,
                       "sizes": sizes
                       }
+        tf.reset_default_graph()
         my_exp = Exp(parameters=parameters,
                      dataClass=ExpData, datakwargs=datakwargs,
                      graphType=ComplexGraph,
@@ -244,6 +248,7 @@ if __name__ == "__main__":
             # optional for standard graph
             var_x_name = "input"
             var_y_name = "output"
+            tf.reset_default_graph()
             my_exp = Exp(parameters=parameters,
                          dataClass=ExpData, datakwargs=datakwargs,
                          graphType=ExpGraphOneXOneY, graphkwargs={"kwargsNN": {"layersizes": [50, 50],
@@ -273,6 +278,8 @@ if __name__ == "__main__":
                                 "kwargsVdata": kwargsTdata,
                           "sizes": {var_x_name: 54, var_y_name: 54}
                           }
+
+            tf.reset_default_graph()
             my_exp = Exp(parameters=parameters,
                          dataClass=ExpData, datakwargs=datakwargs,
                          graphType=ExpGraphOneXOneY, graphkwargs={"kwargsNN": {"layersizes": [50, 50],
@@ -316,6 +323,8 @@ if __name__ == "__main__":
                           "kwargsVdata": kwargsVdata,
                           "sizes": sizes
             }
+
+            tf.reset_default_graph()
             my_exp = Exp(parameters=parameters,
                          dataClass=ExpData, datakwargs=datakwargs,
                          graphType=ExpGraph, graphkwargs={"kwargsNN": {"layersizes": [100, 100], "weightnorm": False},
@@ -360,6 +369,8 @@ if __name__ == "__main__":
                       "kwargsVdata": kwargsVdata,
                       "sizes": sizes
                       }
+
+        tf.reset_default_graph()
         my_exp = Exp(parameters=parameters,
                      dataClass=ExpData, datakwargs=datakwargs,
                      graphType=ComplexGraph,

@@ -97,8 +97,10 @@ class DenseLayer:
 
 
 class ResidualBlock:
-    def __init__(self, input, size, relu=False, bias=True, guided_dropconnect_mask=None,
-                 weight_normalization=False, keep_prob=None, outputsize=None, layernum=0):
+    def __init__(self, input, size, relu=False, bias=True,
+                 weight_normalization=False, keep_prob=None, outputsize=None, layernum=0,
+                 layerClass=DenseLayer,
+                 kwardslayer={}):
         """
         for weight normalization see https://arxiv.org/abs/1602.07868
         for counting the flops of operations see https://mediatum.ub.tum.de/doc/625604/625604
@@ -117,10 +119,11 @@ class ResidualBlock:
         :param size: layer size (number of layer after "X -> Bn(.) -> Relu(.) -> W * .")
         :param relu: do you use relu ? (at the end, just before standard dropout)
         :param bias: do you add bias ?
-        :param guided_dropconnect_mask: tensor of the mask matrix  #TODO 
         :param weight_normalization: do you use weight normalization (see https://arxiv.org/abs/1602.07868)
         :param keep_prob: a scalar tensor for dropout layer (None if you don't want to use it)
         :param layernum: number of layer (this layer in the graph)
+        :param layerClass: the class used to build the layers (DenseLayer or one of its derivatives) -- do not pass an object, but the class
+        :param kwardslayer: the key-words arguments pass when building the instances of class layerClass
         """
 
         self.input = input
@@ -139,10 +142,10 @@ class ResidualBlock:
             #treating "-> W * . -> Bn(.) -> Relu(.)"
             self.first_layer = None
             with tf.variable_scope("resBlock_first_layer"):
-                self.first_layer = DenseLayer(self.res, size, relu=True, bias=bias,
-                                             guided_dropconnect_mask=guided_dropconnect_mask,
+                self.first_layer = layerClass(self.res, size, relu=True, bias=bias,
                                              weight_normalization=weight_normalization,
-                                             keep_prob=None)
+                                             keep_prob=None,
+                                              **kwardslayer)
                 self.flops += self.first_layer.flops
                 self.nbparams += self.first_layer.nbparams
                 self.res = self.first_layer.res
@@ -150,10 +153,10 @@ class ResidualBlock:
             # treating "-> W_2 * . "
             self.second_layer = None
             with tf.variable_scope("resBlock_second_layer"):
-                self.second_layer = DenseLayer(self.res, int(input.get_shape()[1]), relu=False, bias=bias,
-                                               guided_dropconnect_mask=guided_dropconnect_mask,
+                self.second_layer = layerClass(self.res, int(input.get_shape()[1]), relu=False, bias=bias,
                                                weight_normalization=weight_normalization,
-                                               keep_prob=None)
+                                               keep_prob=None,
+                                               **kwardslayer)
                 self.flops += self.second_layer.flops
                 self.nbparams += self.second_layer.nbparams
 
@@ -193,8 +196,10 @@ class ResidualBlock:
 
 
 class DenseBlock:
-    def __init__(self, input, relu=False, bias=True, guided_dropconnect_mask=None, weight_normalization=False,
-                 keep_prob=None, nblayer=2, layernum=0, size=0):
+    def __init__(self, input, relu=False, bias=True, weight_normalization=False,
+                 keep_prob=None, nblayer=2, layernum=0, size=0,
+                 layerClass=DenseLayer,
+                 kwardslayer={}):
         """
         for weight normalization see https://arxiv.org/abs/1602.07868
         for counting the flops of operations see https://mediatum.ub.tum.de/doc/625604/625604
@@ -209,12 +214,13 @@ class DenseBlock:
         :param input: input of the layer 
         :param relu: do you use relu ? (at the end, just before standard dropout)
         :param bias: do you add bias ?
-        :param guided_dropconnect_mask: tensor of the mask matrix  #TODO 
         :param weight_normalization: do you use weight normalization (see https://arxiv.org/abs/1602.07868)
         :param keep_prob: a scalar tensor for dropout layer (None if you don't want to use it)
         :param nblayer: the number of layer in the dense block
         :param layernum: number of layer (this layer in the graph)
         :param size: unused, for compatibility with ResidualBlock and DenseLayer
+        :param layerClass: the class used to build the layers (DenseLayer or one of its derivatives) -- do not pass an object, but the class
+        :param kwardslayer: the key-words arguments pass when building the instances of class layerClass
         """
         self.input = input
         self.weightnormed = weight_normalization
@@ -226,10 +232,10 @@ class DenseBlock:
 
         with tf.variable_scope("dense_block_{}".format(layernum)):
             for i in range(nblayer):
-                tmp_layer = DenseLayer(self.res, size, relu=True, bias=bias,
-                                       guided_dropconnect_mask=guided_dropconnect_mask,
+                tmp_layer = layerClass(self.res, size, relu=True, bias=bias,
                                        weight_normalization=weight_normalization,
-                                       keep_prob=None, layernum=i)
+                                       keep_prob=None, layernum=i,
+                                       **kwardslayer)
                 self.flops += tmp_layer.flops
                 self.nbparams += tmp_layer.nbparams
                 self.res = tmp_layer.res
@@ -291,7 +297,7 @@ class NNFully:
             # scaling the input linearly to have the proper size,
             # only if sizes does not match
             input_propersize = DenseLayer(input=input, size=outputsize, relu=False,
-                                          bias=False, guided_dropconnect_mask=None, weight_normalization=False,
+                                          bias=False, weight_normalization=False,
                                           keep_prob=None, layernum="scaling_proper_input_size")
             self.params_added += input_propersize.nbparams
             self.flop_added += input_propersize.flops
@@ -305,8 +311,8 @@ class NNFully:
         #hidden layers
         for i, ls in enumerate(layersizes):
             # if size of input = layer size, we still apply guided dropout!
-            new_layer = layerClass(input=z, size=ls, relu=True, bias=bias, guided_dropconnect_mask=None,
-                                       weight_normalization=weightnorm, layernum=i, **kwardslayer)
+            new_layer = layerClass(input=z, size=ls, relu=True, bias=bias,
+                                   weight_normalization=weightnorm, layernum=i, **kwardslayer)
             self.layers.append(new_layer)
             z = new_layer.res
 
@@ -315,7 +321,7 @@ class NNFully:
         self.pred = None
         # with tf.variable_scope("last_dense_layer", reuse=reuse):
         self.output = layerClass(input=z, size=outputsize, relu=False, bias=bias,
-                                 guided_dropconnect_mask=None, weight_normalization=weightnorm,
+                                 weight_normalization=weightnorm,
                                  layernum="last", keep_prob=None)
         self.pred = tf.identity(self.output.res, name="output")
 

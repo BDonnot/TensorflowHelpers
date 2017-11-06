@@ -290,9 +290,9 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.enc_output = tf.concat(tup, axis=1, name="encoder_output_concatenantion")
 
         # 3. build the neural network
-        self.nn = nnType(input=self.enc_output,
+        self.nn = nnType(*argsNN,
+                         input=self.enc_output,
                          outputsize=outputsize,
-                         *argsNN,
                          **kwargsNN)
 
         # 4. build the decodings neural networks
