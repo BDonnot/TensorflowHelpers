@@ -326,7 +326,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
                 lambda line: self._parse_function(example_proto=line, sizes=sizes, ms=ms, stds=sds),
                 num_threads=self.num_thread,
                 output_buffer_size=self.num_thread * 5
-            ).repeat(1)
+            ).batch(self.num_thread).repeat(1)
             iterator = dataset.make_one_shot_iterator()
             parsed_features = iterator.get_next(name="fake_iterator")
 
@@ -342,12 +342,12 @@ class ExpTFrecordsDataReader(ExpDataReader):
                         pf = sess.run(parsed_features)
                         for k in sizes.keys():
                             vect = pf[k]
-                            acc[k] += vect
-                            acc2[k] += vect*vect
+                            acc[k] += np.sum(vect, axis=0)
+                            acc2[k] += np.sum(vect*vect, axis=0)
                     except tf.errors.OutOfRangeError:
                         break
-            acc = {k: v/count for k,v in acc.items()}
-            acc2 = {k: v/count for k,v in acc2.items()}
+            acc = {k: v/(count*self.num_thread) for k,v in acc.items()}
+            acc2 = {k: v/(count*self.num_thread)  for k,v in acc2.items()}
 
             ms = acc
             stds = {k: np.sqrt(acc2[k] - v * v) for k,v in acc.items()}
