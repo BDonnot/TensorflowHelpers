@@ -2,7 +2,7 @@ import pdb
 
 import tensorflow as tf
 
-from .DefANN import NNFully
+from .ANN import NNFully
 
 class ExpGraphOneXOneY:
     def __init__(self, data, var_x_name="input", var_y_name="output", nnType=NNFully, argsNN=(), kwargsNN={},
@@ -114,9 +114,9 @@ class ExpGraphOneXOneY:
             fd[el] = data[id]
         return sess.run(toberun, feed_dict=fd)
 
-
 class ExpGraph(ExpGraphOneXOneY):
-    def __init__(self, data, var_x_name={"input"}, var_y_name={"output"}, nnType=NNFully, argsNN=(), kwargsNN={}):
+    def __init__(self, data, var_x_name={"input"}, var_y_name={"output"}, nnType=NNFully, argsNN=(), kwargsNN={},
+                 spec_encoding={}):
         """
         This class can deal with multiple input/output.
         By default, it concatenate all the input variables in one vector, and does the same for the output.
@@ -134,6 +134,7 @@ class ExpGraph(ExpGraphOneXOneY):
         :param nnType: the type of neural network to use
         :param args forwarded to the initializer of neural network
         :param kwargsNN: key word arguments forwarded to the initializer of neural network
+        :param spec_encoding: any specification for changing variable (callable)
         """
 
         self.data = data  # the dictionnary of data pre-processed as produced by an ExpData instance
@@ -150,8 +151,11 @@ class ExpGraph(ExpGraphOneXOneY):
         prev = 0
         tup = tuple()
         for el in sorted(self.inputname):
-            tup += (self.data[el],)
-            this_size = int(self.data[el].get_shape()[1])
+            if el in spec_encoding:
+                tup += (spec_encoding[el](self.data[el]),)
+            else:
+                tup += (self.data[el],)
+            this_size = int(tup[-1].get_shape()[1])
             self.dimin[el] = (prev, prev+this_size)
             prev += this_size
         self.input = tf.concat(tup, axis=1, name="input_concatenantion")
@@ -207,12 +211,15 @@ class ExpGraph(ExpGraphOneXOneY):
 
 
 class ComplexGraph(ExpGraphOneXOneY):
-    def __init__(self, data, outputsize, var_x_name={"input"}, var_y_name={"output"},
+    def __init__(self, data,
+                 outputsize,
+                 sizes,
+                 var_x_name={"input"}, var_y_name={"output"},
                  nnType=NNFully, argsNN=(), kwargsNN={},
                  encDecNN=NNFully, args_enc=(), kwargs_enc={},
                  args_dec=(), kwargs_dec={},
                  kwargs_enc_dec=None,
-                 sizes = {"input": 1}):
+                 spec_encoding={}):
         """
         This class can deal with multiple input/output.
         It will first "encode" with a neural network of type "encDecNN" for each input.
@@ -261,13 +268,16 @@ class ComplexGraph(ExpGraphOneXOneY):
         # 1. build the encodings neural networks
         self.outputEnc = {}
         self.encoders = {}
-        # pdb.set_trace()
         with tf.variable_scope("ComplexGraph_encoding"):
             for varname in sorted(self.inputname):
                 with tf.variable_scope(varname):
                     size_out = sizes[varname]
+                    if varname in spec_encoding:
+                        input_tmp=spec_encoding[varname](self.data[varname])
+                    else:
+                        input_tmp = self.data[varname]
                     tmp = encDecNN(*args_enc,
-                                   input=self.data[varname],
+                                   input=input_tmp,
                                    outputsize=size_out,
                                    **kwargs_enc)
                     self.encoders[varname] = tmp

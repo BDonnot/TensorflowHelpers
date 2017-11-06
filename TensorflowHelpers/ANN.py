@@ -6,7 +6,7 @@ import tensorflow as tf
 
 
 class DenseLayer:
-    def __init__(self, input, size, relu=False, bias=True, guided_dropconnect_mask=None, weight_normalization=False,
+    def __init__(self, input, size, relu=False, bias=True, weight_normalization=False,
                  keep_prob=None, layernum=0):
         """
         for weight normalization see https://arxiv.org/abs/1602.07868
@@ -51,9 +51,6 @@ class DenseLayer:
             else:
                 self.w = self.w_
 
-            if guided_dropconnect_mask is not None:
-                #TODO implement it
-                pass
             res = tf.matmul(self.input, self.w, name="multiplying_weight_matrix")
             self.flops += 2*nin_*size-size
 
