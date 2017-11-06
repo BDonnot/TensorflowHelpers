@@ -588,7 +588,7 @@ class ExpModel:
                     "ModelTrained_best"))
 
         #  we save at each iterations
-        if minibatchnum // self.exp_params.save_model:
+        if minibatchnum // self.exp_params.save_model == 0:
             self.explogger.savetf(
                 sess,
                 os.path.join(
