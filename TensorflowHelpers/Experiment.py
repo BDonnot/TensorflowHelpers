@@ -902,6 +902,7 @@ class Exp:
         # 2. init the weight normalization, if needed
         if self.startfromscratch:
             self.graph.initwn(self.sess)
+        # pdb.set_trace()
         self.is_initialized = True
 
 

@@ -26,6 +26,7 @@ class DenseLayer:
         self.input = input
         self.weightnormed = False
         self.bias = False
+        self.relued = False
         self.res = None
         with tf.variable_scope("dense_layer_{}".format(layernum)):
             self.w_ = tf.get_variable(name="weights_matrix",
@@ -51,7 +52,7 @@ class DenseLayer:
             else:
                 self.w = self.w_
 
-            res = tf.matmul(self.input, self.w, name="multiplying_weight_matrix")
+            self.res_ = tf.matmul(self.input, self.w, name="multiplying_weight_matrix")
             self.flops += 2*nin_*size-size
 
             if bias:
@@ -62,15 +63,20 @@ class DenseLayer:
                                          name="bias",
                                          trainable=True)
                 self.nbparams += int(size)
-                res = tf.add(res, self.b, name="adding_bias")
+                self.res_ = tf.add(self.res_, self.b, name="adding_bias")
                 self.flops += size # vectors addition of size "size"
 
             if relu:
-                res = tf.nn.relu(res, name="applying_relu")
+                self.relued = True
+                res = tf.nn.relu(self.res_, name="applying_relu")
                 self.flops += size  # we consider relu of requiring 1 computation per number (one max)
+            else:
+                # I must have access to the output of the layer, before the non linearity
+                # for debugginh initialization of weight normalization
+                res = self.res_
 
             if keep_prob is not None:
-                res = tf.nn.dropout(res, keep_prob=keep_prob, name="applying_dropout")
+                res = tf.nn.dropout(self.res, keep_prob=keep_prob, name="applying_dropout")
                 # we consider that generating random number count for 1 operation
                 self.flops += size  # generate the "size" real random numbers
                 self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
@@ -89,11 +95,14 @@ class DenseLayer:
             return
         # input = sess.run(input)
         with tf.variable_scope("init_wn_layer"):
-            m_init, v_init = sess.run(tf.nn.moments(tf.matmul(self.input, self.w), [0]))
-            # pdb.set_trace()
+            m_init, v_init = sess.run(tf.nn.moments(tf.matmul(self.input, self.scaled_matrix), [0]))
             sess.run(tf.assign(self.g, scale_init/tf.sqrt(v_init + 1e-10), name="weigth_normalization_init_g"))
             if self.bias:
-                sess.run(tf.assign(self.b, -m_init*scale_init, name="weigth_normalization_init_b"))
+                sess.run(tf.assign(self.b, -m_init*scale_init/tf.sqrt(v_init + 1e-10), name="weigth_normalization_init_b"))
+        # pdb.set_trace()
+        #     res = sess.run()
+        # return res
+
 
 
 class ResidualBlock:
@@ -191,8 +200,8 @@ class ResidualBlock:
         if not self.weightnormed:
             return
 
-        self.first_layer.initwn(sess=sess, scale_init=scale_init)
-        self.second_layer.initwn(sess=sess, scale_init=scale_init)
+        self.first_layer.initwn(sess=sess, scale_init=0.05)
+        self.second_layer.initwn(sess=sess, scale_init=0.05)
 
 
 class DenseBlock:
@@ -266,8 +275,8 @@ class DenseBlock:
         """
         if not self.weightnormed:
             return
-        for l in self.layers:
-            l.initwn(sess=sess, scale_init=scale_init)
+        for i, l in enumerate(self.layers):
+            l.initwn(sess=sess, scale_init=0.1/(i+1))
 
 
 class NNFully:
@@ -321,7 +330,7 @@ class NNFully:
         self.output = None
         self.pred = None
         # with tf.variable_scope("last_dense_layer", reuse=reuse):
-        self.output = layerClass(input=z, size=outputsize, relu=False, bias=bias,
+        self.output = DenseLayer(input=z, size=outputsize, relu=False, bias=bias,
                                  weight_normalization=weightnorm,
                                  layernum="last", keep_prob=None)
         self.pred = tf.identity(self.output.res, name="output")

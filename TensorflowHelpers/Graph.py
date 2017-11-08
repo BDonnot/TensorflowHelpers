@@ -331,6 +331,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.nn.initwn(sess=sess)
         for _,v in self.decoders.items():
             v.initwn(sess=sess)
+            # pdb.set_trace()
 
     def get_true_output_dict(self):
         """
