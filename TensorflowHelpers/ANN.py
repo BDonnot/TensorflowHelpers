@@ -330,7 +330,7 @@ class NNFully:
         self.output = None
         self.pred = None
         # with tf.variable_scope("last_dense_layer", reuse=reuse):
-        self.output = DenseLayer(input=z, size=outputsize, relu=False, bias=bias,
+        self.output = layerClass(input=z, size=outputsize, relu=False, bias=bias,
                                  weight_normalization=weightnorm,
                                  layernum="last", keep_prob=None)
         self.pred = tf.identity(self.output.res, name="output")
