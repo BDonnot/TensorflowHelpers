@@ -425,6 +425,7 @@ class ExpData:
         self.means_vars_directory = "means_vars"
         self.path_exp = path_exp
         self.sizes = sizes
+        self.donnotcenter = donnotcenter
         ms, sds = self._load_npy_means_stds(classData)
         self.classData = classData
         # pdb.set_trace()
@@ -521,6 +522,9 @@ class ExpData:
                 for k in self.sizes.keys():
                     m = np.load(os.path.join(self.path_exp, self.means_vars_directory, "ms-{}.npy".format(k)))
                     s = np.load(os.path.join(self.path_exp, self.means_vars_directory, "sds-{}.npy".format(k)))
+                    if k in self.donnotcenter:
+                        m = np.zeros(m.shape)
+                        s = np.ones(s.shape)
                     ms[k] = m
                     sds[k] = s
                 # pdb.set_trace()
