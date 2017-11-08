@@ -701,7 +701,7 @@ class ExpModel:
             #     dict_summary[varname + "_params"] = "{}".format(params[varname])
 
         if self.explogger.logger is not None:
-            dummy_pred = true - np.mean(true, axis=0)
+            dummy_pred = np.mean(true, axis=0)
             error = dummy_pred - true
             mean_abs_error = np.mean(np.abs(error))
             self.explogger.logger.info("Dummy pred (mean by dimension) MAE error (val set) for {} : {:.3f}".format(

@@ -30,7 +30,7 @@ class DenseLayer:
         with tf.variable_scope("dense_layer_{}".format(layernum)):
             self.w_ = tf.get_variable(name="weights_matrix",
                                 shape=[nin_, size],
-                                initializer=tf.contrib.layers.xavier_initializer(dtype=tf.float32),
+                                initializer=tf.contrib.layers.xavier_initializer(dtype=tf.float32, uniform=False),
                                 # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/weights_matrix:0"),
                                 trainable=True)  # weight matrix
             self.nbparams += int(nin_ * size)
@@ -293,6 +293,7 @@ class NNFully:
         self.params_added = 0
         self.flop_added = 0
         # TODO if outputsize != input.get_shape()[1] ?
+        # TODO remove that for standard network without residual or dense block !!!
         if outputsize != input.get_shape()[1]:
             # scaling the input linearly to have the proper size,
             # only if sizes does not match
