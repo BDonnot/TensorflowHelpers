@@ -281,7 +281,7 @@ class DenseBlock:
 
 class NNFully:
     def __init__(self, input, outputsize, layersizes=(), weightnorm=False, bias=True,
-                 layerClass=DenseLayer, kwardslayer={}):
+                 layerClass=DenseLayer, kwardslayer={}, resizeinput=False):
         """
         Most classical form of neural network,
         It takes intput as input, add hidden layers of sizes in layersizes.
@@ -297,21 +297,25 @@ class NNFully:
         :param bias: do you want to add a bias in your computation
         :param layerClass: type of layer you want to use (DenseLayer, ResidualBlock or DenseBlock for example)
         :param kwardslayer: keyword arguments forwarded when building the layer networks compatible with class "layerClass"
+        :param resizeinput: do you want to scale, prior to do any computation, your input to have the same size as your output
         """
 
         self.params_added = 0
         self.flop_added = 0
         # TODO if outputsize != input.get_shape()[1] ?
         # TODO remove that for standard network without residual or dense block !!!
-        if outputsize != input.get_shape()[1]:
-            # scaling the input linearly to have the proper size,
-            # only if sizes does not match
-            input_propersize = DenseLayer(input=input, size=outputsize, relu=False,
-                                          bias=False, weight_normalization=False,
-                                          keep_prob=None, layernum="scaling_proper_input_size")
-            self.params_added += input_propersize.nbparams
-            self.flop_added += input_propersize.flops
-            z = input_propersize.res
+        if resizeinput:
+            if outputsize != input.get_shape()[1]:
+                # scaling the input linearly to have the proper size,
+                # only if sizes does not match
+                input_propersize = DenseLayer(input=input, size=outputsize, relu=False,
+                                              bias=False, weight_normalization=False,
+                                              keep_prob=None, layernum="scaling_proper_input_size")
+                self.params_added += input_propersize.nbparams
+                self.flop_added += input_propersize.flops
+                z = input_propersize.res
+            else:
+                z = input
         else:
             z = input
 
