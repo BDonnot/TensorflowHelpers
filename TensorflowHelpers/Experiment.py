@@ -893,6 +893,7 @@ class Exp:
             # self.parameters.saver = tf.train.Saver()
             # get the value of the best variable saved
             # self.parameters.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
+            self.sess.run(tf.global_variables_initializer())
             self.model.explogger.tfwriter.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
         # 3. init the data
         self.data.init(self.sess)
