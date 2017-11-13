@@ -113,12 +113,12 @@ class ExpLogger:
             name_model,
             logger,
             nameSaveLearning,
-            saver,
             num_savings,
             num_savings_minibatch,
             epochsize,
             saveEachEpoch,
-            otherinfo = {}
+            otherinfo = {},
+            saver=None
     ):
         """
         Logger that will log the data in tensorboard as well as in a log file, to be used in the Experiment class.
@@ -338,14 +338,13 @@ class ExpLogger:
         self.tfwriter.saver.restore(sess, os.path.join(path, name))
 
 
-class ExpSaverParam:
+class ExpParam:
     def __init__(self,
                  path=".",
                  pathdata=".",
                  params=None,
                  logger=None,
                  name_exp="MyExp",
-                 saver=None,
                  num_savings=100,
                  num_savings_minibatch=500,
                  num_savings_model=20,
@@ -381,7 +380,7 @@ class ExpSaverParam:
         self.params = params
         self.logger = logger
         self.nameSaveLearning = name_exp
-        self.saver = saver
+        # self.saver = saver
         self.num_savings = num_savings
         self.save_loss = 0
         self.num_savings_minibatch = num_savings_minibatch
@@ -435,7 +434,7 @@ class ExpModel:
         add the loss and the optimizer to the pure definition of the neural network.
         The NN is defined by ExpGraphOneXOneY.
         Here the saver / restorer is defined as well.
-        :param exp_params: an object of class ExpSaverParam
+        :param exp_params: an object of class ExpParam
         # :param input: a list of input placeholder, obtained from ExpData  #TODO
         # :param output: a list of outputs placeholder, obtained from ExpData  #TODO
         :param data: an object of class ExpData or one of its derivative. The data used for the computation
@@ -516,7 +515,6 @@ class ExpModel:
             params=exp_params,
             logger=exp_params.logger,
             nameSaveLearning=exp_params.nameSaveLearning,
-            saver=exp_params.saver,
             num_savings=exp_params.num_savings,
             num_savings_minibatch=exp_params.num_savings_minibatch,
             epochsize=exp_params.epochsize,
@@ -752,13 +750,18 @@ class ExpModel:
         return newepoch, is_error_nan, losscomputed, valloss, timedata, timeTrain, timesaving
 
 
+class ExpSaverParam(ExpParam):
+    def __init__(self, *args, **kwargs):
+        ExpParam.__init__(self, *args, **kwargs)
+        print("W: ExpSaverParam: DEPRECATED, use ExpParam instead")
+
 class Exp:
     def __init__(self,
                  parameters,
                  dataClass=ExpData, dataargs=(), datakwargs={},
                  graphType=ExpGraphOneXOneY, graphargs=(), graphkwargs={},
                  modelType=ExpModel, modelargs=(), modelkwargs={},
-                 otherdsinfo= {},
+                 otherdsinfo={},
                  startfromscratch=False
                  ):
         """
@@ -768,7 +771,7 @@ class Exp:
         Then build the neural networks with ExpGraphOneXOneY, graphargs, graphkwargs
         Then build the comptuation graph (add the loss, savers etc.) : modelType, modelargs, modelkwargs
         Then open a tensorflow session
-        :param parameters: the experiment parameters (object of class ExpSaverParam)
+        :param parameters: the experiment parameters (object of class ExpParam)
         :param dataClass: the class used for building the data handler (ExpData or one of its derivatives -- pass the class, not an object)
         :param dataargs: arguments used to build the data handler
         :param datakwargs: key word arguments used to build the data handler
@@ -795,7 +798,7 @@ class Exp:
             else:
                 str_ = "The path \"{}\" already exists"
                 str_ += "If you still want to continue you can pass \"continue_if_exists=True\""
-                str_ += " when you build the parameters of the experiments (object of class ExpSaverParam)"
+                str_ += " when you build the parameters of the experiments (object of class ExpParam)"
                 raise RuntimeError(str_.format(self.path))
 
 
@@ -814,10 +817,12 @@ class Exp:
             self._saveinfos(name="model_related",classType=modelType,
                            args=modelargs, kwargs=modelkwargs)
 
-
-        # 1. load the data
-        #TODO try to load the ms and sds from previous graph if self.startfromscratch is False
+        # tf.reset_default_graph()
         self.data = None
+        self.graph = None
+
+        # with tf.Graph.as_default() as g:
+        # 1. load the data
         with tf.variable_scope("datareader"):
             self.data = dataClass(
                 *dataargs,
@@ -826,9 +831,7 @@ class Exp:
                 path_exp=self.path,
                 otherdsinfo=otherdsinfo,
                 **datakwargs)
-
         # 2. build the graph or load the graph
-        self.graph = None
         with tf.variable_scope("neuralnetwork"):
             self.graph = graphType(*graphargs,
                                    data=self.data.getdata(),
@@ -847,6 +850,7 @@ class Exp:
         # 4. create the tensorflow session
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
+        # self.parameters.saver = tf.train.Saver()
         self.sess = tf.Session(config=config)
 
         # 5. defines other quantities needed for additionnal data
@@ -879,6 +883,7 @@ class Exp:
         Initialize the model, should not be used from outside the class
         :return: 
         """
+        # pdb.set_trace()
         if self.is_initialized:
             return
         # 1. init the variables
@@ -889,16 +894,17 @@ class Exp:
             with open(os.path.join(self.path_saveparamexp, "parameters.json"), "w") as f:
                 json.dump(self.parameters.__dict__, fp=f, sort_keys=True, indent=4)
         else:
-            self.parameters.saver = tf.train.Saver()
+            # self.parameters.saver = tf.train.Saver()
             # get the value of the best variable saved
-            self.parameters.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
+            # self.parameters.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
+            self.model.explogger.tfwriter.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
         # 3. init the data
         self.data.init(self.sess)
 
         if not self.startfromscratch:
             # check that the model didn't do anything stupid while reloading
             self.model.checkreloaded(self.sess)
-
+        # pdb.set_trace()
         # 2. init the weight normalization, if needed
         if self.startfromscratch:
             self.graph.initwn(self.sess)
