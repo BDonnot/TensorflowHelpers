@@ -89,10 +89,6 @@ class TFWriters:
             os.path.join(path, valname),
             graph=tf.get_default_graph())
 
-        # saver of the graph
-        self.saver = saver if saver is not None else tf.train.Saver(
-            max_to_keep=None)
-
         #other savers
         self.othersavers = {}
         for savername in othersaver:
@@ -101,6 +97,10 @@ class TFWriters:
         # TODO idee : mettre en argument une liste (nomsaver / dataset), et quand on appelerait 'save' ca calculerait,
         # TODO pour chaque element de cette liste, l'erreur sur le datset et le
         # TODO sauvegarderait au bon endroit.
+
+        # saver of the graph
+        self.saver = saver if saver is not None else tf.train.Saver(
+            max_to_keep=None)
 
 
 class ExpLogger:
@@ -435,16 +435,12 @@ class ExpModel:
         The NN is defined by ExpGraphOneXOneY.
         Here the saver / restorer is defined as well.
         :param exp_params: an object of class ExpParam
-        # :param input: a list of input placeholder, obtained from ExpData  #TODO
-        # :param output: a list of outputs placeholder, obtained from ExpData  #TODO
         :param data: an object of class ExpData or one of its derivative. The data used for the computation
         :param graph: an object of class ExpGraphOneXOneY or one of its derivative. The NN used for the computation.
         :param lossfun: the loss function to use
         :param optimizerClass: the class optimizer to use (tf.train.optimizer)
         :param optimizerkwargs: the key-words arguments to build the optimizer. You can pass the learning rate here.
         :param otherinfo: an iterable: the names of all the other dataset for which errors will be computed (for example Test dataset)
-        # :param graphType: the type of "ExpGraphOneXOneY" to use
-        # :param pars: the dictionnary of hyper parameters of the mdoels
         """
         self.lossfun = lossfun
         self.optimizerClass = optimizerClass
@@ -509,7 +505,7 @@ class ExpModel:
             self.mergedsummaryvar = tf.summary.merge(li_summaries)
         self.graph.init(self.mergedsummaryvar, self.loss)
 
-        # 4. create the saver object
+        # 4. create the saver object (at the end, because each node of the graph must be saved)
         self.explogger = ExpLogger(
             path=exp_params.path_saver,
             params=exp_params,
