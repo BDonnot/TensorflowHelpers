@@ -611,11 +611,22 @@ class ExpModel:
 
         #TODO for now getpred takes a lot of RAM, maybe it is not necessary and it can be optimized
         predicted, orig = self.data.getpred(sess=sess, graph=self.graph, varsname=self.graph.outputname)
-
+        if self.explogger.logger is not None:
+            self.explogger.logger.info("_______________________________")
+            self.explogger.logger.info("Computing error for \"{}\" dataset".format("validation"))
         for varname in orig.keys():
             self.logfinalerror(varname, pred=predicted[varname], true=orig[varname], dict_summary=dict_summary)
+        for dsn, ds in self.data.otherdatasets.items():
+            predicted, orig = self.data.getpred(sess=sess, graph=self.graph,
+                                                varsname=self.graph.outputname, dataset_name=dsn)
+            if self.explogger.logger is not None:
+                self.explogger.logger.info("_______________________________")
+                self.explogger.logger.info("Computing error for \"{}\" dataset".format(dsn))
+            for varname in orig.keys():
+                self.logfinalerror(varname, pred=predicted[varname], true=orig[varname],
+                                   dict_summary=dict_summary, dataset_name=dsn)
 
-    def logfinalerror(self, varname, pred, true, dict_summary=None):
+    def logfinalerror(self, varname, pred, true, dict_summary=None, dataset_name="Val"):
         """
         Log the final error (eg at the end of training) meaning that:
             - comptue the error for the whole validation set (using pred and true array)
@@ -835,13 +846,12 @@ class Exp:
                                    )
 
         # 3. add the loss, optimizer and saver
-        self.model = modelType(
-            exp_params=self.parameters,
-            data=self.data,
-            graph=self.graph,
-            otherinfo=otherdsinfo.keys(),
-            *modelargs,
-            **modelkwargs)
+        self.model = modelType( exp_params=self.parameters,
+                                data=self.data,
+                                graph=self.graph,
+                                otherinfo=otherdsinfo.keys(),
+                                *modelargs,
+                                **modelkwargs)
 
         # 4. create the tensorflow session
         config = tf.ConfigProto()
@@ -893,8 +903,8 @@ class Exp:
             # self.parameters.saver = tf.train.Saver()
             # get the value of the best variable saved
             # self.parameters.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
-            self.sess.run(tf.global_variables_initializer())
             self.model.explogger.tfwriter.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
+        # pdb.set_trace()
         # 3. init the data
         self.data.init(self.sess)
 
@@ -969,7 +979,12 @@ class Exp:
                 self.data.getnrowsval(),
                 self.graph.get_input_size(),
                 self.graph.get_output_size()))
-
+        for dsname, ds in self.data.otherdatasets.items():
+            self.model.explogger.info(
+                "Size of {} set : nsample {}, size_X {},size_Y {} ".format(dsname,
+                                                                           ds.nrows,
+                                                                           self.graph.get_input_size(),
+                                                                           self.graph.get_output_size()))
         dict_summary = {}
         dict_summary["nb_params"] = "{}".format(self.graph.getnbparam())
         dict_summary["flop"] = "{}".format(self.graph.getflop())
