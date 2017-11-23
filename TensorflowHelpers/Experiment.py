@@ -583,7 +583,7 @@ class ExpModel:
 
         #  we save at each iterations
         if minibatchnum % self.exp_params.save_model == 0:
-            pdb.set_trace()
+            # pdb.set_trace()
             self.explogger.savetf(
                 sess,
                 os.path.join(
