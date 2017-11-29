@@ -12,7 +12,8 @@ import logging
 import pdb
 
 import numpy as np
-# from tqdm import tqdm
+from tqdm import tqdm
+
 import tensorflow as tf
 
 from .ANN import NNFully
@@ -930,10 +931,12 @@ class Exp:
         is_error_nan = False
 
         # 4. launch the computation
-        for epochnum in range(self.parameters.num_epoch):
-            is_error_nan = self.runallminibatchesthisepoch()
-            if is_error_nan:
-                break
+        with tqdm(total=self.parameters.num_epoch, desc="Epoch") as pbar:
+            for epochnum in range(self.parameters.num_epoch):
+                is_error_nan = self.runallminibatchesthisepoch()
+                pbar.update(1)
+                if is_error_nan:
+                    break
 
         #  log the end of the experiment
         self.logend(is_error_nan)
@@ -945,23 +948,24 @@ class Exp:
         :return: True if the model diverge (output nan) False otherwise
         """
         is_error_nan = False
-        batch_size = self.parameters.batch_size
         newepoch = False
-        while not newepoch:
-            self.trainingsteps += 1
-            # call the training function of the model
-            newepoch, is_error_nan, losscomputed, valloss, timedata, timeTrain, timesaving = self.model.run(
-                self.sess)
-            self.timedata += timedata
-            self.timeTrain += timeTrain
-            self.timesaving += timesaving
+        with tqdm(total=self.parameters.epochsize, desc="Minibatches") as pbar:
+            while not newepoch:
+                self.trainingsteps += 1
+                # call the training function of the model
+                newepoch, is_error_nan, losscomputed, valloss, timedata, timeTrain, timesaving = self.model.run(
+                    self.sess)
+                self.timedata += timedata
+                self.timeTrain += timeTrain
+                self.timesaving += timesaving
 
-            if losscomputed:
-                self.valloss.append(valloss)
-                self.saveTrainedNet()
+                if losscomputed:
+                    self.valloss.append(valloss)
+                    self.saveTrainedNet()
 
-            if is_error_nan:
-                break
+                pbar.update(1)
+                if is_error_nan:
+                    break
 
         return is_error_nan
 

@@ -7,7 +7,10 @@ import pdb
 import numpy as np
 import tensorflow as tf
 
-#TODO make this class more compliant with the other version
+# TODO READER: make them behave equally well, for now only TFRecordReader can preprocess for example
+# TODO: READERS: correct the but when encountering nan's or infinite value in all reader classes
+# TODO: have a better implementation of preprocessing function
+
 class ExpDataReader:
     ms_tensor=True # is the 'ms' field a tensor or a numpy array
     def __init__(self, train, batch_size, fun_preprocess=lambda x: x):
@@ -243,7 +246,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
                  sizes={"input":1, "output":1},
                  num_thread=4,
                  ms=None, sds=None,
-                 fun_preprocess=lambda x: x):
+                 fun_preprocess=None):
         """
         ms (and sds) should be None or dictionnaries with at least the keys in vars, and tensorflow float32 tensors as values
         
@@ -256,7 +259,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
         :param num_thread: number of thread to read the data
         :param ms: means of data set (used for validation instead -- of recomputing the mean). 
         :param sds: standard deviation of data set (used for validation instead -- of recomputing the mean)
-        :param fun_preprocess: fun use to preprocess data (before centering / reducing), not apply for variable in donnotcenter
+        :param fun_preprocess: fun use to preprocess data (before centering / reducing), (dictionnary with variable name as key)
         """
         #TODO handle case where there are multiple tfrecords !
 
@@ -266,7 +269,10 @@ class ExpTFrecordsDataReader(ExpDataReader):
         self.batch_size = batch_size
         self.features = {k: tf.FixedLenFeature((val,), tf.float32, default_value=[0.0 for _ in range(val)])
                     for k, val in sizes.items()}
-        self.fun_preprocess = fun_preprocess
+        self.funs_preprocess = {k: tf.identity for k in sizes.keys()}
+        if fun_preprocess is not None:
+            for k, fun in fun_preprocess.items():
+                self.funs_preprocess[k] = fun
         self.donnotcenter = donnotcenter
         # TODO optimization: do not parse the file if you nrows (training set parsed 2 times)
         # count the number of lines
@@ -328,8 +334,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
         """
         parsed_features = tf.parse_single_example(example_proto, self.features)
         for k in sizes.keys():
-            if not k in self.donnotcenter:
-                parsed_features[k] = self.fun_preprocess(parsed_features[k])
+            parsed_features[k] = self.funs_preprocess[k](parsed_features[k])
             parsed_features[k] = parsed_features[k] - ms[k]
             parsed_features[k] = parsed_features[k]/stds[k]
         return parsed_features
@@ -346,9 +351,9 @@ class ExpTFrecordsDataReader(ExpDataReader):
         :return: the mean, the standard deviation, and the number of rows
         """
 
-        acc = { k:np.zeros(shape=(v)) for k,v in sizes.items() }
-        acc2 = { k:np.zeros(shape=(v)) for k,v in sizes.items() }
-
+        acc = { k:np.zeros(shape = (v)) for k,v in sizes.items() }
+        acc2 = { k:np.zeros(shape = (v)) for k,v in sizes.items() }
+        msg_displayed = {k:0 for k,_ in sizes.items()}
         with tf.variable_scope("datareader_compute_means_vars"):
             ms = {k:tf.constant(0.0, name="fake_means") for k,_ in sizes.items()}
             sds = {k:tf.constant(1.0, name="fake_stds") for k,_ in sizes.items()}
@@ -373,14 +378,34 @@ class ExpTFrecordsDataReader(ExpDataReader):
                         pf = sess.run(parsed_features)
                         for k in sizes.keys():
                             vect = pf[k]
-                            acc[k] += np.sum(vect, axis=0)
-                            acc2[k] += np.sum(vect*vect, axis=0)
+                            if np.any(~np.isfinite(vect)):
+                                if msg_displayed[k] == 0:
+                                    msg = "W Datareader : there are infinite or nan values in the dataset named {}"
+                                    msg += ". We replaced it with the current average (by column)"
+                                    print(msg.format(k))
+                                msg_displayed[k] += 1
+                                # pdb.set_trace()
+                                # import numpy.ma as ma
+                                vect = np.where(np.isfinite(vect), vect, acc[k]/(count*self.num_thread))
+                                # pdb.set_trace()
+                                # vect[~np.isfinite(vect)] = acc[k]/(count*self.num_thread)
+                            acc[k] += np.nansum(vect, axis=0)
+                            acc2[k] += np.nansum(vect*vect, axis=0)
+                            # if np.any(~np.isfinite(acc2[k])):
+                            #     pdb.set_trace()
                     except tf.errors.OutOfRangeError:
                         break
+            for k in sizes.keys():
+                if msg_displayed[k] != 0:
+                    msg = "W Datareader : there are at least {} lines where infinite or nan values "
+                    msg += " were encounteredin the dataset named {}"
+                    msg += ". They were replaced with the current average (by column) at the time of computation"
+                    print(msg.format(msg_displayed[k], k))
             acc = {k: v/(count*self.num_thread) for k,v in acc.items()}
             acc2 = {k: v/(count*self.num_thread)  for k,v in acc2.items()}
 
             ms = acc
+            # pdb.set_trace()
             stds = {k: np.sqrt(acc2[k] - v * v) for k,v in acc.items()}
             for k,v in stds.items():
                 stds[k][stds[k] <= 1e-3] = 1.0
@@ -412,7 +437,7 @@ class ExpData:
                  argsVdata=(), kwargsVdata={},
                     otherdsinfo = {},
                  donnotcenter={},
-                 fun_preprocess=(lambda x: x, lambda x: x)
+                 fun_preprocess=None
                  ):
         """ The base class for every 'data' subclasses, depending on the problem
         :param batch_size: the size of the minibatch
@@ -437,6 +462,11 @@ class ExpData:
         self.donnotcenter = donnotcenter
         ms, sds = self._load_npy_means_stds(classData)
         self.classData = classData
+        self.funs_preprocess = {varname: (tf.identity, np.identity) for varname in self.sizes.keys()}
+        if fun_preprocess is not None:
+            for varname, fun in fun_preprocess.items():
+                self.funs_preprocess[varname]= fun
+        fun_preprocess = {k: v[0] for k,v in self.funs_preprocess.items()}
         # pdb.set_trace()
         # the data for training (fitting the models parameters)
         self.trainingData = classData(*argsTdata,
@@ -447,13 +477,13 @@ class ExpData:
                                       batch_size=batch_size,
                                       ms=ms,
                                       sds=sds,
-                                      fun_preprocess=fun_preprocess[0],
+                                      fun_preprocess=fun_preprocess,
                                       **kwargsTdata)
         # get the values of means and standard deviation of the training set,
         # to be use in the others sets
         self.ms = self.trainingData.ms
         self.sds = self.trainingData.sds
-        self.fun_preprocess=fun_preprocess
+
         # the data for training (only used when reporting error on the whole
         # set)
         self.trainData = classData(*argsTdata,
@@ -464,7 +494,7 @@ class ExpData:
                                    batch_size=sizemax,
                                    ms=self.ms,
                                    sds=self.sds,
-                                   fun_preprocess=fun_preprocess[0],
+                                   fun_preprocess=fun_preprocess,
                                    **kwargsTdata)
         # the data for validation set (fitting the models hyper parameters --
         # only used when reporting error on the whole set)
@@ -476,7 +506,7 @@ class ExpData:
                                  batch_size=sizemax,
                                  ms=self.ms,
                                  sds=self.sds,
-                                 fun_preprocess=fun_preprocess[0],
+                                 fun_preprocess=fun_preprocess,
                                  **kwargsVdata)
         self.sizemax = sizemax # size maximum of a "minibatch" eg the maximum number of examples that will be fed
         # at once for making a single forward computation
@@ -505,7 +535,7 @@ class ExpData:
                                                         batch_size=sizemax,
                                                         ms=self.ms,
                                                         sds=self.sds,
-                                                        fun_preprocess=fun_preprocess[0],
+                                                        fun_preprocess=fun_preprocess,
                                                         **values["kwargsdata"]
                                                         )
             self.otheriterator_init[otherdsname] = self.iterator.make_initializer(self.otherdatasets[otherdsname].dataset)
@@ -715,13 +745,13 @@ class ExpData:
                         tmp = preds[1][k]
                     size = tmp.shape[0]
                     # rescale it ("un preprossed it")
-                    tmp = self.fun_preprocess[1](tmp* self.sds[k] + self.ms[k])
+                    tmp = self.funs_preprocess[k][1](tmp* self.sds[k] + self.ms[k])
                     # storing it in res
                     res[k][previous:(previous+size), :] = tmp
 
                     tmp = preds[1][k]
                     # rescale it ("un preprossed it")
-                    tmp = self.fun_preprocess[1](tmp * self.sds[k] + self.ms[k])
+                    tmp = self.funs_preprocess[k][1](tmp * self.sds[k] + self.ms[k])
                     # storing it in res
                     orig[k][previous:(previous + size), :] = tmp
 
