@@ -646,11 +646,11 @@ class ExpModel:
         max_abs_val = np.max(np.abs(true))
 
         if self.explogger.logger is not None:
-            self.explogger.logger.info("Final validation mean abs error for {} : {:.3f} ({:.1f}%)".format(
+            self.explogger.logger.info("Final MAE (mean abs error) for {} : {:.3f} ({:.1f}%)".format(
                 varname, mean_abs_error, mean_abs_error / mean_abs_val * 100))
         max_error = np.max(np.abs(error))
         if self.explogger.logger is not None:
-            self.explogger.logger.info("Max validation error for {} : {:.3f} ({:.3f} -- {:.1f}%)".format(
+            self.explogger.logger.info("Max MAE error for {} : {:.3f} ({:.3f} -- {:.1f}%)".format(
                 varname, max_error, max_error / mean_abs_val, max_error / max_abs_val * 100))
             
         a = np.full(shape=(1, true.shape[1]), fill_value=1.0)
@@ -658,31 +658,31 @@ class ExpModel:
         mean_rel_error = np.mean(np.abs(error[np.abs(true) >= threshold]) /
                                  np.abs(true[np.abs(true) >= threshold]))
         if self.explogger.logger is not None:
-            self.explogger.logger.info("Final validation mean relative error for {} : {:.3f}% ".format(
+            self.explogger.logger.info("Final MAPE for {} : {:.3f}% ".format(
                 varname, mean_rel_error * 100))
 
         max_rel_error = np.max(np.abs(error[np.abs(true) >= threshold] /
                                       true[np.abs(true) >= threshold]))
         if self.explogger.logger is not None:
-            self.explogger.logger.info("Final validation max relative error for {} : {:.3f}% ".format(
+            self.explogger.logger.info("Final max MAPE for {} : {:.3f}% ".format(
                 varname, max_rel_error * 100))
         b = np.percentile(np.abs(true), 90, axis=0).reshape((1, true.shape[1]))
         threshold = np.maximum(a, b)
         mean_abs_error_high = np.mean(np.abs(error[np.abs(true) >= threshold])).astype(np.float32)
         if self.explogger.logger is not None:
-            self.explogger.logger.info("Final validation mean abs error (abs values >= q_90) for {} : {:.3f} ".format(
+            self.explogger.logger.info("Final MAE (when abs true_values >= q_90) for {} : {:.3f} ".format(
                 varname, mean_abs_error_high))
 
         mean_rel_error_high = np.mean(np.abs(error[np.abs(true) >= threshold] /
                                              true[np.abs(true) >= threshold]))
         if self.explogger.logger is not None:
-            self.explogger.logger.info("Final validation mean rel error (abs values >= q_90) for {} : {:.3f}% ".format(
+            self.explogger.logger.info("Final MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
                 varname, 100*mean_rel_error_high))
 
         max_rel_error_high = np.max(np.abs(error[np.abs(true) >= threshold] /
                                            true[np.abs(true) >= threshold]))
         if self.explogger.logger is not None:
-            self.explogger.logger.info("Final validation max relative error (abs values >= q_90) for {} : {:.3f}% ".format(
+            self.explogger.logger.info("Final max MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
                 varname, max_rel_error_high * 100))
 
             self.explogger.logger.info("Mean (abs) value val set for {} : {:.3f}".format(varname, mean_abs_val))
