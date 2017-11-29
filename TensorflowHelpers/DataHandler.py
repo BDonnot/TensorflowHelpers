@@ -462,7 +462,7 @@ class ExpData:
         self.donnotcenter = donnotcenter
         ms, sds = self._load_npy_means_stds(classData)
         self.classData = classData
-        self.funs_preprocess = {varname: (tf.identity, np.identity) for varname in self.sizes.keys()}
+        self.funs_preprocess = {varname: (tf.identity, lambda x :x ) for varname in self.sizes.keys()}
         if fun_preprocess is not None:
             for varname, fun in fun_preprocess.items():
                 self.funs_preprocess[varname]= fun
