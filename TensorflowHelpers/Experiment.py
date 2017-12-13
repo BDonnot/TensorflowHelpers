@@ -1097,3 +1097,4 @@ class Exp:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.sess.close()
+        del self.sess
