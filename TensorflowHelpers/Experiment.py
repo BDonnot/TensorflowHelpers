@@ -1092,39 +1092,8 @@ class Exp:
             varname = varname | self.graph.inputname
         return self.data.getpred(self.sess, self.graph, varname, dataset_name=dsname)
 
-    def __enter__(self,
-                 parameters,
-                 dataClass=ExpData, dataargs=(), datakwargs={},
-                 graphType=ExpGraphOneXOneY, graphargs=(), graphkwargs={},
-                 modelType=ExpModel, modelargs=(), modelkwargs={},
-                 otherdsinfo={},
-                 startfromscratch=False):
-
-        self.exp = Exp(parameters=parameters,
-                       dataClass=ExpData, dataargs=(), datakwargs={},
-                       graphType=ExpGraphOneXOneY, graphargs=(), graphkwargs={},
-                       modelType=ExpModel, modelargs=(), modelkwargs={},
-                       otherdsinfo={},
-                       startfromscratch=False)
+    def __enter__(self):
+        return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.exp.sess.close()
-
-# class ExpManager:
-#     def __enter__(self,
-#                  parameters,
-#                  dataClass=ExpData, dataargs=(), datakwargs={},
-#                  graphType=ExpGraphOneXOneY, graphargs=(), graphkwargs={},
-#                  modelType=ExpModel, modelargs=(), modelkwargs={},
-#                  otherdsinfo={},
-#                  startfromscratch=False):
-#
-#         self.exp = Exp(parameters=parameters,
-#                        dataClass=ExpData, dataargs=(), datakwargs={},
-#                        graphType=ExpGraphOneXOneY, graphargs=(), graphkwargs={},
-#                        modelType=ExpModel, modelargs=(), modelkwargs={},
-#                        otherdsinfo={},
-#                        startfromscratch=False)
-#
-#     def __exit__(self, exc_type, exc_value, traceback):
-#         self.exp.sess.close()
+        self.sess.close()
