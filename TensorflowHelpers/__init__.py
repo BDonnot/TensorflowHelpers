@@ -5,4 +5,4 @@ from .DataHandler import ExpDataReader, ExpCSVDataReader, ExpData, ExpTFrecordsD
 from .Graph import ExpGraphOneXOneY, ExpGraph, ComplexGraph  # the tensorflow "main" comptuation graph
 from .Experiment import ExpParam, ExpSaverParam  # parameters for an experiment
 from .Experiment import ExpModel  # model you want to use
-from .Experiment import Exp  # the experience
+from .Experiment import Exp, ExpManager # the experience

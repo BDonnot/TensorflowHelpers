@@ -302,6 +302,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
             num_threads=num_thread,
             output_buffer_size=num_thread * 5
         )
+        # self.dataset = self.dataset.shard(10, 2)
         if train:
             self.dataset = self.dataset.repeat(-1)
             self.dataset = self.dataset.shuffle(buffer_size=10000)
@@ -333,6 +334,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
         :return: 
         """
         parsed_features = tf.parse_single_example(example_proto, self.features)
+        # TODO faster if I batch first! (use tf.pase_example instead)
         for k in sizes.keys():
             parsed_features[k] = self.funs_preprocess[k](parsed_features[k])
             parsed_features[k] = parsed_features[k] - ms[k]
