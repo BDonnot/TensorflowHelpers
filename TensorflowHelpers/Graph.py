@@ -268,20 +268,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         # 1. build the encodings neural networks
         self.outputEnc = {}
         self.encoders = {}
-        with tf.variable_scope("ComplexGraph_encoding"):
-            for varname in sorted(self.inputname):
-                with tf.variable_scope(varname):
-                    size_out = sizes[varname]
-                    if varname in spec_encoding:
-                        input_tmp=spec_encoding[varname](self.data[varname])
-                    else:
-                        input_tmp = self.data[varname]
-                    tmp = encDecNN(*args_enc,
-                                   input=input_tmp,
-                                   outputsize=size_out,
-                                   **kwargs_enc)
-                    self.encoders[varname] = tmp
-                    self.outputEnc[varname] = tmp.pred
+        self._buildencoders(sizes, spec_encoding, encDecNN, args_enc, kwargs_enc)
 
         # self.input = tf.zeros(shape=(None, 0), dtype=tf.float32)
         tup = tuple()
@@ -290,26 +277,14 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.enc_output = tf.concat(tup, axis=1, name="encoder_output_concatenantion")
 
         # 3. build the neural network
-        self.nn = nnType(*argsNN,
-                         input=self.enc_output,
-                         outputsize=outputsize,
-                         **kwargsNN)
+        self.nn = None
+        self._buildintermediateNN(nnType=nnType, argsNN=argsNN, input=self.enc_output, outputsize=outputsize, kwargsNN=kwargsNN)
 
         # 4. build the decodings neural networks
         self.outputDec = {}
         self.decoders = {}
         self.size_out = 0
-        with tf.variable_scope("ComplexGraph_decoding"):
-            for varname in sorted(self.outputname):
-                with tf.variable_scope(varname):
-                    # size_out = sizes[varname]
-                    tmp = encDecNN(*args_dec,
-                                   input=self.nn.pred,
-                                   outputsize=int(self.data[varname].get_shape()[1]),
-                                   **kwargs_dec)
-                    self.decoders[varname] = tmp
-                    self.outputDec[varname] = tmp.pred
-                    self.size_out += int(tmp.pred.get_shape()[1])
+        self._builddecoders(encDecNN, args_dec, kwargs_dec)
 
         # 5. build structure to retrieve the right information from the concatenated one's
         self.vars_out = self.outputDec  # dictionnary of output of the NN
@@ -376,3 +351,64 @@ class ComplexGraph(ExpGraphOneXOneY):
         for _,v in self.decoders.items():
             res += v.getflop()
         return res
+
+    def _buildencoders(self, sizes, spec_encoding, encDecNN, args_enc, kwargs_enc):
+        """
+        Build the encoder networks
+        :param sizes: 
+        :param spec_encoding: 
+        :param encDecNN: 
+        :param args_enc: 
+        :param kwargs_enc: 
+        :return: 
+        """
+        with tf.variable_scope("ComplexGraph_encoding"):
+            for varname in sorted(self.inputname):
+                with tf.variable_scope(varname):
+                    size_out = sizes[varname]
+                    if varname in spec_encoding:
+                        input_tmp=spec_encoding[varname](self.data[varname])
+                    else:
+                        input_tmp = self.data[varname]
+                    tmp = encDecNN(*args_enc,
+                                   input=input_tmp,
+                                   outputsize=size_out,
+                                   **kwargs_enc)
+                    self.encoders[varname] = tmp
+                    self.outputEnc[varname] = tmp.pred
+                    
+    def _builddecoders(self, encDecNN, args_dec, kwargs_dec):
+        """
+        Build the decoder networks
+        :param sizes: 
+        :param encDecNN: 
+        :param args_dec: 
+        :param kwargs_dec: 
+        :return: 
+        """
+        with tf.variable_scope("ComplexGraph_decoding"):
+            for varname in sorted(self.outputname):
+                with tf.variable_scope(varname):
+                    # size_out = sizes[varname]
+                    tmp = encDecNN(*args_dec,
+                                   input=self.nn.pred,
+                                   outputsize=int(self.data[varname].get_shape()[1]),
+                                   **kwargs_dec)
+                    self.decoders[varname] = tmp
+                    self.outputDec[varname] = tmp.pred
+                    self.size_out += int(tmp.pred.get_shape()[1])
+
+    def _buildintermediateNN(self, nnType, argsNN, input, outputsize, kwargsNN):
+        """
+        
+        :param nnType:
+        :param argsNN: 
+        :param input: 
+        :param outputsize: 
+        :param kwargsNN: 
+        :return: 
+        """
+        self.nn = nnType(*argsNN,
+                         input=input,
+                         outputsize=outputsize,
+                         **kwargsNN)

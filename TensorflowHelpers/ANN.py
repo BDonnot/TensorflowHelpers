@@ -281,7 +281,7 @@ class DenseBlock:
 
 class NNFully:
     def __init__(self, input, outputsize, layersizes=(), weightnorm=False, bias=True,
-                 layerClass=DenseLayer, kwardslayer={}, resizeinput=False):
+                 layerClass=DenseLayer, kwardslayer={}, resizeinput=False, name=None):
         """
         Most classical form of neural network,
         It takes intput as input, add hidden layers of sizes in layersizes.
@@ -298,10 +298,15 @@ class NNFully:
         :param layerClass: type of layer you want to use (DenseLayer, ResidualBlock or DenseBlock for example)
         :param kwardslayer: keyword arguments forwarded when building the layer networks compatible with class "layerClass"
         :param resizeinput: do you want to scale, prior to do any computation, your input to have the same size as your output
+        :param name: a name (optional) for this 
+        
+        if kwardslayer is a dcitionnary, the same "kwardslayer" will be used for alllayer. If you want specific
+        "kwardslayer" per layer, use a list of the same size of "layersizes"
         """
 
         self.params_added = 0
         self.flop_added = 0
+        name = name+"_" if name is not None else ""
         # TODO if outputsize != input.get_shape()[1] ?
         # TODO remove that for standard network without residual or dense block !!!
         if resizeinput:
@@ -310,7 +315,7 @@ class NNFully:
                 # only if sizes does not match
                 input_propersize = DenseLayer(input=input, size=outputsize, relu=False,
                                               bias=False, weight_normalization=False,
-                                              keep_prob=None, layernum="scaling_proper_input_size")
+                                              keep_prob=None, layernum=name+"scaling_proper_input_size")
                 self.params_added += input_propersize.nbparams
                 self.flop_added += input_propersize.flops
                 z = input_propersize.res
@@ -324,9 +329,18 @@ class NNFully:
 
         #hidden layers
         for i, ls in enumerate(layersizes):
-            # if size of input = layer size, we still apply guided dropout!
+            if type(kwardslayer) == type({}):
+                tmp_kw = kwardslayer
+            elif type(kwardslayer) == type([]):
+                tmp_kw = kwardslayer[i]
+            else:
+                msg = "NNFully: wrong \"kwardslayer\" type argument speficified. You provided {} "
+                msg += "of type {} but only {} (same arguments for every layer) "
+                msg +="and {} (different argument for each layer) are understood."
+                raise RuntimeError(msg.format(kwardslayer, type(kwardslayer), type({}), type([])))
+
             new_layer = layerClass(input=z, size=ls, relu=True, bias=bias,
-                                   weight_normalization=weightnorm, layernum=i, **kwardslayer)
+                                   weight_normalization=weightnorm, layernum=name+str(i), **tmp_kw)
             self.layers.append(new_layer)
             z = new_layer.res
 
@@ -336,7 +350,7 @@ class NNFully:
         # with tf.variable_scope("last_dense_layer", reuse=reuse):
         self.output = layerClass(input=z, size=outputsize, relu=False, bias=bias,
                                  weight_normalization=weightnorm,
-                                 layernum="last", keep_prob=None)
+                                 layernum=name+"last", keep_prob=None)
         self.pred = tf.identity(self.output.res, name="output")
 
     def getnbparam(self):

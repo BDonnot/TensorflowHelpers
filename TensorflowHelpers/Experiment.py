@@ -28,6 +28,8 @@ TRAINING_COLLECTION_NAME = "train_op"
 NAMESAVEDTFVARS = 'savedvars'
 NAME_PH_SAVED = "placeholder"
 
+#TODO do not save if just restoring the model for predictions only. Also make sure
+#TODO that realoading a reloaded situation end up leading the one choosen (and not the original one)
 class Path:
     def __init__(
             self,
