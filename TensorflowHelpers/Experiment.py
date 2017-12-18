@@ -344,6 +344,8 @@ class ExpLogger:
             path = self.params.path_saver
         self.tfwriter.saver.restore(sess, os.path.join(path, name))
 
+    def close(self):
+        self.filesavenum.close()
 
 class ExpParam:
     def __init__(self,
@@ -360,7 +362,8 @@ class ExpParam:
                  # minibatchnum=0,
                  batch_size=1,
                  num_epoch=1,
-                 continue_if_exists=False):
+                 continue_if_exists=False,
+                 showtqdm=True):
         """
         Save the loss (full training / test set) each "self.save_loss" minibatches
         Save the loss (minibatch) each "self.num_savings_minibatch" minibatches
@@ -381,6 +384,7 @@ class ExpParam:
         :param batch_size: the size of one training minibatch
         :param num_epoch: the number of epoch to run
         :param continue_if_exists: if the folder exists, stop do not run the expriment
+        :param showtqdm: if False, deactivate display of progress bar
         """
         self.path = path
         self.pathdata = pathdata
@@ -404,6 +408,7 @@ class ExpParam:
         self.num_epoch = num_epoch
         self.total_minibatches = 0
         self.continue_if_exists = continue_if_exists
+        self.showtqdm = showtqdm
 
     def initsizes(self, nrows):
         """
@@ -634,7 +639,7 @@ class ExpModel:
                 self.logfinalerror(varname, pred=predicted[varname], true=orig[varname],
                                    dict_summary=dict_summary, dataset_name=dsn)
 
-    def logfinalerror(self, varname, pred, true, dict_summary=None, dataset_name="Val"):
+    def logfinalerror(self, varname, pred, true, dict_summary=None, dataset_name="Val", logger=None):
         """
         Log the final error (eg at the end of training) meaning that:
             - comptue the error for the whole validation set (using pred and true array)
@@ -644,6 +649,7 @@ class ExpModel:
         :param pred: the predicted value for this varibale (numpy array)
         :param true: the true value for this variable (numpy array)
         :param dict_summary: a dictionary for logging the error
+        :param logger: None for logger of self.explogger, another logger otherwise
         :return: 
         """
         error = pred - true
@@ -651,49 +657,52 @@ class ExpModel:
         mean_abs_val = np.mean(np.abs(true))
         max_abs_val = np.max(np.abs(true))
 
-        if self.explogger.logger is not None:
-            self.explogger.logger.info("Final MAE (mean abs error) for {} : {:.3f} ({:.1f}%)".format(
+        if logger is None:
+            logger = self.explogger.logger
+            
+        if logger is not None:
+            logger.info("Final MAE (mean abs error) for {} : {:.3f} ({:.1f}%)".format(
                 varname, mean_abs_error, mean_abs_error / mean_abs_val * 100))
         max_error = np.max(np.abs(error))
-        if self.explogger.logger is not None:
-            self.explogger.logger.info("Max MAE error for {} : {:.3f} ({:.3f} -- {:.1f}%)".format(
+        if logger is not None:
+            logger.info("Max MAE error for {} : {:.3f} ({:.3f} -- {:.1f}%)".format(
                 varname, max_error, max_error / mean_abs_val, max_error / max_abs_val * 100))
             
         a = np.full(shape=(1, true.shape[1]), fill_value=1.0)
         threshold = np.maximum(np.mean(np.abs(true), axis=0) * 1e-3, a)
         mean_rel_error = np.mean(np.abs(error[np.abs(true) >= threshold]) /
                                  np.abs(true[np.abs(true) >= threshold]))
-        if self.explogger.logger is not None:
-            self.explogger.logger.info("Final MAPE for {} : {:.3f}% ".format(
+        if logger is not None:
+            logger.info("Final MAPE for {} : {:.3f}% ".format(
                 varname, mean_rel_error * 100))
 
         max_rel_error = np.max(np.abs(error[np.abs(true) >= threshold] /
                                       true[np.abs(true) >= threshold]))
-        if self.explogger.logger is not None:
-            self.explogger.logger.info("Final max MAPE for {} : {:.3f}% ".format(
+        if logger is not None:
+            logger.info("Final max MAPE for {} : {:.3f}% ".format(
                 varname, max_rel_error * 100))
         b = np.percentile(np.abs(true), 90, axis=0).reshape((1, true.shape[1]))
         threshold = np.maximum(a, b)
         mean_abs_error_high = np.mean(np.abs(error[np.abs(true) >= threshold])).astype(np.float32)
-        if self.explogger.logger is not None:
-            self.explogger.logger.info("Final MAE (when abs true_values >= q_90) for {} : {:.3f} ".format(
+        if logger is not None:
+            logger.info("Final MAE (when abs true_values >= q_90) for {} : {:.3f} ".format(
                 varname, mean_abs_error_high))
 
         mean_rel_error_high = np.mean(np.abs(error[np.abs(true) >= threshold] /
                                              true[np.abs(true) >= threshold]))
-        if self.explogger.logger is not None:
-            self.explogger.logger.info("Final MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
+        if logger is not None:
+            logger.info("Final MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
                 varname, 100*mean_rel_error_high))
 
         max_rel_error_high = np.max(np.abs(error[np.abs(true) >= threshold] /
                                            true[np.abs(true) >= threshold]))
-        if self.explogger.logger is not None:
-            self.explogger.logger.info("Final max MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
+        if logger is not None:
+            logger.info("Final max MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
                 varname, max_rel_error_high * 100))
 
-            self.explogger.logger.info("Mean (abs) value val set for {} : {:.3f}".format(varname, mean_abs_val))
-            self.explogger.logger.info("Std value val set for {} : {:.3f}".format(varname, np.std(true)))
-            self.explogger.logger.info("Max (abs) value val set for {} : {:.3f}".format(varname, max_abs_val))
+            logger.info("Mean (abs) value val set for {} : {:.3f}".format(varname, mean_abs_val))
+            logger.info("Std value val set for {} : {:.3f}".format(varname, np.std(true)))
+            logger.info("Max (abs) value val set for {} : {:.3f}".format(varname, max_abs_val))
 
         if dict_summary is not None:
             dict_summary[varname + "_mean_abs_error"] = "{}".format(mean_abs_error)
@@ -713,16 +722,16 @@ class ExpModel:
             # if params is not None:
             #     dict_summary[varname + "_params"] = "{}".format(params[varname])
 
-        if self.explogger.logger is not None:
+        if logger is not None:
             dummy_pred = np.mean(true, axis=0)
             error = dummy_pred - true
             mean_abs_error = np.mean(np.abs(error))
-            self.explogger.logger.info("Dummy pred (mean by dimension) MAE error (val set) for {} : {:.3f}".format(
+            logger.info("Dummy pred (mean by dimension) MAE error (val set) for {} : {:.3f}".format(
                 varname, mean_abs_error))
             threshold = np.maximum(np.mean(np.abs(true), axis=0) * 1e-3, a)
             mean_rel_error = np.mean(np.abs(error[np.abs(true) >= threshold]) /
                                      np.abs(true[np.abs(true) >= threshold]))
-            self.explogger.logger.info("Dummy pred (mean by dimension) MAPE (val set) for {} : {:.3f}%".format(
+            logger.info("Dummy pred (mean by dimension) MAPE (val set) for {} : {:.3f}%".format(
                 varname, mean_rel_error * 100))
 
     def run_withfeed_dict(self, sess): #TODO in another class. Here it is for class with tensorflow dataset
@@ -763,6 +772,9 @@ class ExpModel:
         timesaving = tmp.total_seconds()  # ellapsed time saving data, in seconds
 
         return newepoch, is_error_nan, losscomputed, valloss, timedata, timeTrain, timesaving
+
+    def close(self):
+        self.explogger.close()
 
 
 class ExpSaverParam(ExpParam):
@@ -937,7 +949,7 @@ class Exp:
         is_error_nan = False
 
         # 4. launch the computation
-        with tqdm(total=self.parameters.num_epoch, desc="Epoch") as pbar:
+        with tqdm(total=self.parameters.num_epoch, desc="Epoch", disable=not self.parameters.showtqdm) as pbar:
             for epochnum in range(self.parameters.num_epoch):
                 is_error_nan = self.runallminibatchesthisepoch()
                 pbar.update(1)
@@ -955,7 +967,7 @@ class Exp:
         """
         is_error_nan = False
         newepoch = False
-        with tqdm(total=self.parameters.epochsize, desc="Minibatches") as pbar:
+        with tqdm(total=self.parameters.epochsize, desc="Minibatches", disable=not self.parameters.showtqdm) as pbar:
             while not newepoch:
                 self.trainingsteps += 1
                 # call the training function of the model
@@ -1100,3 +1112,4 @@ class Exp:
     def __exit__(self, exc_type, exc_value, traceback):
         self.sess.close()
         del self.sess
+        self.model.close()
