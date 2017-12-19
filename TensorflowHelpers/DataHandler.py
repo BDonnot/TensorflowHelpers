@@ -256,7 +256,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
         :param sds: standard deviation of data set (used for validation instead -- of recomputing the mean)
         """
         #TODO handle case where there are multiple tfrecords !
-
+        if type(filename) == type(""):
+            filename = {filename}
         ExpDataReader.__init__(self, train=train, batch_size=batch_size)
         self.sizes = sizes
         self.num_thread = num_thread
@@ -286,7 +287,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
         self.sds = self._shape_properly(sds_, name="stds") if sds is None else sds
 
         self.dataset = tf.contrib.data.TFRecordDataset(
-            [os.path.join(pathdata, filename)]).map(
+            [os.path.join(pathdata, fn) for fn in filename]).map(
             lambda line: self._parse_function(example_proto=line, sizes=sizes, ms=self.ms, stds=self.sds),
             num_threads=num_thread,
             output_buffer_size=num_thread * 5
@@ -306,12 +307,13 @@ class ExpTFrecordsDataReader(ExpDataReader):
         """
         ms = {el: np.zeros(1) for el in sizes}
         sds = {el: np.ones(1) for el in sizes}
-        nb = 0
-        fn_ = os.path.join(path, fn)
-        for nb, record in enumerate(tf.python_io.tf_record_iterator(fn_)):
-            pass
-        # don't forget to add 1 because python start at 0!
-        return ms, sds, nb+1
+        nb_total = 0
+        for fn_ in [os.path.join(path, el) for el in fn]:
+            for nb, record in enumerate(tf.python_io.tf_record_iterator(fn_)):
+                pass
+            nb_total += nb
+            # don't forget to add 1 because python start at 0!
+        return ms, sds, nb_total+1
 
     def _parse_function(self, example_proto, sizes, ms, stds):
         """
@@ -346,7 +348,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
             ms = {k:tf.constant(0.0, name="fake_means") for k,_ in sizes.items()}
             sds = {k:tf.constant(1.0, name="fake_stds") for k,_ in sizes.items()}
             dataset = tf.contrib.data.TFRecordDataset(
-                [os.path.join(path, fn)]).map(
+                [os.path.join(path, el) for el in fn]).map(
                 lambda line: self._parse_function(example_proto=line, sizes=sizes, ms=ms, stds=sds),
                 num_threads=self.num_thread,
                 output_buffer_size=self.num_thread * 5
@@ -371,7 +373,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
                     except tf.errors.OutOfRangeError:
                         break
             acc = {k: v/(count*self.num_thread) for k,v in acc.items()}
-            acc2 = {k: v/(count*self.num_thread)  for k,v in acc2.items()}
+            acc2 = {k: v/(count*self.num_thread) for k,v in acc2.items()}
 
             ms = acc
             stds = {k: np.sqrt(acc2[k] - v * v) for k,v in acc.items()}
