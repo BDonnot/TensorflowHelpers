@@ -9,6 +9,7 @@ setup(name='TensorflowHelpers',
       license='GPLv3',
       packages=['TensorflowHelpers'],
       install_requires=[
+          "tqdm",
           'numpy',
           'tensorflow'
       ],
