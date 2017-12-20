@@ -323,9 +323,9 @@ class ExpTFrecordsDataReader(ExpDataReader):
         for fn_ in [os.path.join(path, el) for el in fn]:
             for nb, record in enumerate(tf.python_io.tf_record_iterator(fn_)):
                 pass
-            nb_total += nb
+            nb_total += nb+1
             # don't forget to add 1 because python start at 0!
-        return ms, sds, nb_total+1
+        return ms, sds, nb_total
 
     def _parse_function(self, example_proto, sizes, ms, stds):
         """
@@ -681,12 +681,9 @@ class ExpData:
         :param train: does it concern the training set
         :return:
         """
-        # TODO why is it in data ?
         acc_loss = 0.
         error_nan = False
         while True:
-            # TODO GD here : check that the "huge batch" concern the same
-            # TODO disconnected quad
             try:
                 summary, loss_ = graph.run(
                     sess, toberun=[
@@ -727,16 +724,13 @@ class ExpData:
         else:
             dataset = self.otherdatasets[dataset_name]
             initop = self.otheriterator_init[dataset_name]
-        res = {k: np.zeros(shape=(dataset.nrowsX(), int(self.ms[k].shape[0]))) for k in varsname}
-        orig = {k: np.zeros(shape=(dataset.nrowsX(), int(self.ms[k].shape[0]))) for k in varsname}
+        size_dataset = dataset.nrowsX()
+        res = {k: np.zeros(shape=(size_dataset, int(self.ms[k].shape[0]))) for k in varsname}
+        orig = {k: np.zeros(shape=(size_dataset, int(self.ms[k].shape[0]))) for k in varsname}
         sess.run(initop)
         previous = 0
         while True:
-            # TODO GD here : check that the "huge batch" concern the same
-            # TODO disconnected quad
             try:
-                #TODO optim: do not compute irrelevant data, eg data not in varsname
-                # TODO it is done when calling self.true_data
                 preds = graph.run(sess, toberun=[graph.vars_out, self.true_data] )
                 size = 0
                 for k in res.keys():
@@ -748,16 +742,17 @@ class ExpData:
                         # k is an input variable, no chance to have it from the graph output!
                         tmp = preds[1][k]
                     size = tmp.shape[0]
+                    max_range = min(previous+size, size_dataset)
                     # rescale it ("un preprossed it")
-                    tmp = self.funs_preprocess[k][1](tmp* self.sds[k] + self.ms[k])
+                    tmp = self.funs_preprocess[k][1](tmp * self.sds[k] + self.ms[k])
                     # storing it in res
-                    res[k][previous:(previous+size), :] = tmp
+                    res[k][previous:max_range, :] = tmp
 
                     tmp = preds[1][k]
                     # rescale it ("un preprossed it")
                     tmp = self.funs_preprocess[k][1](tmp * self.sds[k] + self.ms[k])
                     # storing it in res
-                    orig[k][previous:(previous + size), :] = tmp
+                    orig[k][previous:max_range, :] = tmp
 
                 previous += size
             except tf.errors.OutOfRangeError:
