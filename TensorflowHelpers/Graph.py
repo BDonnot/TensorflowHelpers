@@ -219,7 +219,11 @@ class ComplexGraph(ExpGraphOneXOneY):
                  encDecNN=NNFully, args_enc=(), kwargs_enc={},
                  args_dec=(), kwargs_dec={},
                  kwargs_enc_dec=None,
-                 spec_encoding={}):
+                 spec_encoding={},
+                 has_vae=False,
+                 latent_dim_size=None,
+                 latent_hidden_layers=(),
+                 latent_keep_prob=None):
         """
         This class can deal with multiple input/output.
         It will first "encode" with a neural network of type "encDecNN" for each input.
@@ -232,6 +236,11 @@ class ComplexGraph(ExpGraphOneXOneY):
         - self.vars_in
 
         Basically, this should represent the neural network.
+        
+        This class can have a variational part after the intermediate NN of the "ComplexGraph" model
+        The "decoder" of the "ComplexGraph" use the a variational input.
+        To compute the latent space, code derived from "https://github.com/tegg89/VAE-Tensorflow" have been used.
+        
         :param data: the dictionnary of input tensor data (key=name, value=tensorflow tensor)
         :param var_x_name: iterable: the names of all the input variables
         :param var_y_name: iterable: the name of  all the output variables
@@ -246,6 +255,10 @@ class ComplexGraph(ExpGraphOneXOneY):
         :param kwargs_enc_dec: 
         :param sizes: the size output by the encoder for each input variable. Dictionnary with key: variable names, value: size
         :param outputsize: the output size for the intermediate / main neural network
+        :param has_vae: do you want to add a variationnal auto encoder (between the output of the intermediate neural network and the decoders) 
+        :param latent_dim_size: the size of the latent space (int)
+        :param latent_hidden_layers: the number of hidden layers of the latent space (ordered iterable of integer)
+        :param latent_keep_prob: keep probability for regular dropout for the building of the latent space (affect only the mean)
         """
 
         self.data = data  # the dictionnary of data pre-processed as produced by an ExpData instance
@@ -253,11 +266,13 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.inputname = var_x_name
         self.data = data
 
+
         if kwargs_enc_dec is not None:
             # TODO make this usage deprecated
             # TODO raise an error if kwargs_enc or kwargs_dec not "empty"
             kwargs_enc = kwargs_enc_dec
             kwargs_dec = kwargs_enc_dec
+
         # dictionnary of "ground truth" data
         self.true_dataY = {k: self.data[k] for k in self.outputname}
         self.true_dataX = {k: self.data[k] for k in self.inputname}
@@ -280,17 +295,28 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.nn = None
         self._buildintermediateNN(nnType=nnType, argsNN=argsNN, input=self.enc_output, outputsize=outputsize, kwargsNN=kwargsNN)
 
-        # 4. build the decodings neural networks
+        # 4. add a variational component if needed
+        self.has_vae = has_vae
+        if self._have_latent_space():
+            self.latent_z = None
+            self.latent_dim_size = None # will be set to the proper value (eg not None in self._build_latent_space)
+            self._build_latent_space(latent_dim_size, latent_hidden_layers, latent_keep_prob)
+            inputdec = self.latent_z
+        else:
+            self.kld = None
+            inputdec = self.nn.pred
+
+        # 5. build the decodings neural networks
         self.outputDec = {}
         self.decoders = {}
         self.size_out = 0
-        self._builddecoders(encDecNN, args_dec, kwargs_dec)
+        self._builddecoders(encDecNN, args_dec, kwargs_dec, inputdec=inputdec)
 
-        # 5. build structure to retrieve the right information from the concatenated one's
+        # 6. build structure to retrieve the right information from the concatenated one's
         self.vars_out = self.outputDec  # dictionnary of output of the NN
         self.vars_in = self.true_dataX
 
-        # 6. create the fields summary and loss that will be created in ExpModel and assign via "self.init"
+        # 7. create the fields summary and loss that will be created in ExpModel and assign via "self.init"
         self.mergedsummaryvar = None
         self.loss = None
 
@@ -377,7 +403,7 @@ class ComplexGraph(ExpGraphOneXOneY):
                     self.encoders[varname] = tmp
                     self.outputEnc[varname] = tmp.pred
                     
-    def _builddecoders(self, encDecNN, args_dec, kwargs_dec):
+    def _builddecoders(self, encDecNN, args_dec, kwargs_dec, inputdec=None):
         """
         Build the decoder networks
         :param sizes: 
@@ -387,11 +413,13 @@ class ComplexGraph(ExpGraphOneXOneY):
         :return: 
         """
         with tf.variable_scope("ComplexGraph_decoding"):
+            if inputdec is None:
+                inputdec = self.nn.pred
             for varname in sorted(self.outputname):
                 with tf.variable_scope(varname):
                     # size_out = sizes[varname]
                     tmp = encDecNN(*args_dec,
-                                   input=self.nn.pred,
+                                   input=inputdec,
                                    outputsize=int(self.data[varname].get_shape()[1]),
                                    **kwargs_dec)
                     self.decoders[varname] = tmp
@@ -412,3 +440,47 @@ class ComplexGraph(ExpGraphOneXOneY):
                          input=input,
                          outputsize=outputsize,
                          **kwargsNN)
+
+    def _build_latent_space(self, latent_dim_size, latent_hidden_layers, latent_keep_prob):
+        with tf.variable_scope("ComplexGraph_variational"):
+            # inspired from "https://github.com/tegg89/VAE-Tensorflow/blob/master/model.py"
+            if latent_dim_size is None:
+                latent_dim_size = int(self.nn.pred.get_shape()[1])
+            self.latent_dim_size = latent_dim_size
+            # build the mean
+            self.mu_vae = NNFully(input=self.nn.pred, outputsize=latent_dim_size, resizeinput=False,
+                                  layersizes=latent_hidden_layers, kwardslayer={"keep_prob": latent_keep_prob},
+                                  name="mu_vae")
+
+            # We build the var of the VAE
+            self.logstd_vae = NNFully(input=self.nn.pred, outputsize=latent_dim_size, resizeinput=False,
+                                  layersizes=latent_hidden_layers,
+                                  name="logstd_vae")
+            # sample a N(0,1) same shape as log std
+            self.epsilon = tf.random_normal(tf.shape(self.logstd_vae.pred), name='epsilon')
+            # get the true std (eg take the exponential
+            self.std_vae = tf.exp(.5 * self.logstd_vae.pred)
+
+            # compute the latent variable
+            self.latent_z = self.mu_vae.pred + tf.multiply(self.std_vae, self.epsilon)
+            # TODO I may have a problem here. kl divergence must be added example by example in a minibatch...
+            self.kld = -.5 * tf.reduce_sum(1. + self.logstd_vae.pred - tf.pow(self.mu_vae.pred, 2) - tf.exp(self.logstd_vae.pred),
+                                           # reduction_indices=1,
+                                           name="kl_divergence")
+
+    def _have_latent_space(self):
+        return self.has_vae
+
+    def init(self, mergedsummaryvar, loss):
+        """
+        Assign the summary 'mergedsummaryvar' for easier access
+        :param mergedsummaryvar: the summary of everything to be save by tensorboard
+        :param loss: the loss tensor use for training (reconstruction loss) : I need to add the KL-divergence loss if vae is used
+        :return:
+        """
+        self.mergedsummaryvar = mergedsummaryvar
+        sqrt_dim_size = tf.sqrt(float(self.latent_dim_size))
+        if self._have_latent_space():
+            self.loss = tf.add(loss, 1/sqrt_dim_size*self.kld)
+        else:
+            self.loss = loss

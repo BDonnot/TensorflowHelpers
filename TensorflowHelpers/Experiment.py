@@ -468,6 +468,7 @@ class ExpModel:
             self.inference = {k: tf.identity(v, name="{}".format(k)) for k,v in graph.getoutput().items()}
             true_output_dict = self.graph.get_true_output_dict()
         self.loss = None
+
         with tf.variable_scope("training_loss"):
             self.losses = {k: self.lossfun(self.inference[k]-true_output_dict[k], name="training_loss_{}".format(k)) for k in self.inference.keys()}
             self.loss = tf.constant(0., dtype=tf.float32)
