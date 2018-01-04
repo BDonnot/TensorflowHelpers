@@ -363,7 +363,7 @@ class ExpParam:
                  batch_size=1,
                  num_epoch=1,
                  continue_if_exists=False,
-                 showtqdm=True):
+                 showtqdm=False):
         """
         Save the loss (full training / test set) each "self.save_loss" minibatches
         Save the loss (minibatch) each "self.num_savings_minibatch" minibatches
@@ -866,7 +866,7 @@ class Exp:
                                    )
 
         # 3. add the loss, optimizer and saver
-        self.model = modelType( exp_params=self.parameters,
+        self.model = modelType(exp_params=self.parameters,
                                 data=self.data,
                                 graph=self.graph,
                                 otherinfo=otherdsinfo.keys(),
@@ -874,10 +874,10 @@ class Exp:
                                 **modelkwargs)
 
         # 4. create the tensorflow session
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
+        self.config = tf.ConfigProto()
+        self.config.gpu_options.allow_growth = True
         # self.parameters.saver = tf.train.Saver()
-        self.sess = tf.Session(config=config)
+        self.sess = None #tf.Session(config=self.config)
 
         # 5. defines other quantities needed for additionnal data
         self.timedata = 0  # time to get the data
@@ -1107,6 +1107,7 @@ class Exp:
         return self.data.getpred(self.sess, self.graph, varname, dataset_name=dsname)
 
     def __enter__(self):
+        self.sess = tf.Session(config=self.config)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
