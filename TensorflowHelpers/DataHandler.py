@@ -297,12 +297,12 @@ class ExpTFrecordsDataReader(ExpDataReader):
         self.ms = self._shape_properly(ms_, name="means") if ms is None else ms
         self.sds = self._shape_properly(sds_, name="stds") if sds is None else sds
 
-        self.dataset = tf.contrib.data.TFRecordDataset(
+        self.dataset = tf.data.TFRecordDataset(
             [os.path.join(pathdata, fn) for fn in filename]).map(
             lambda line: self._parse_function(example_proto=line, sizes=sizes, ms=self.ms, stds=self.sds),
-            num_threads=num_thread,
-            output_buffer_size=num_thread * 5
-        )
+            num_parallel_calls=num_thread,
+            # output_buffer_size=num_thread * 5
+        ).prefetch(num_thread * 5)
         # self.dataset = self.dataset.shard(10, 2)
         if train:
             self.dataset = self.dataset.repeat(-1)
