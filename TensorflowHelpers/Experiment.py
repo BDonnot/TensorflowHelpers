@@ -878,7 +878,7 @@ class Exp:
         self.config = tf.ConfigProto()
         self.config.gpu_options.allow_growth = True
         # self.parameters.saver = tf.train.Saver()
-        self.sess = None #tf.Session(config=self.config)
+        self.sess = tf.Session(config=self.config)
 
         # 5. defines other quantities needed for additionnal data
         self.timedata = 0  # time to get the data
@@ -1108,6 +1108,10 @@ class Exp:
         return self.data.getpred(self.sess, self.graph, varname, dataset_name=dsname)
 
     def __enter__(self):
+        # kill and delete the previous session (unused, but just to be sure)
+        self.sess.close()
+        del self.sess
+        # recreate a proper session that will be used and delete in __exit__
         self.sess = tf.Session(config=self.config)
         return self
 
@@ -1115,3 +1119,4 @@ class Exp:
         self.sess.close()
         del self.sess
         self.model.close()
+        # tf.reset_default_graph()

@@ -300,6 +300,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         if self._have_latent_space():
             self.latent_z = None
             self.latent_dim_size = None # will be set to the proper value (eg not None in self._build_latent_space)
+            self.sqrt_dim_size = None # same as above
             self._build_latent_space(latent_dim_size, latent_hidden_layers, latent_keep_prob)
             inputdec = self.latent_z
         else:
@@ -447,6 +448,7 @@ class ComplexGraph(ExpGraphOneXOneY):
             if latent_dim_size is None:
                 latent_dim_size = int(self.nn.pred.get_shape()[1])
             self.latent_dim_size = latent_dim_size
+            self.sqrt_dim_size = 1.0 #tf.sqrt(float(self.latent_dim_size))
             # build the mean
             self.mu_vae = NNFully(input=self.nn.pred, outputsize=latent_dim_size, resizeinput=False,
                                   layersizes=latent_hidden_layers, kwardslayer={"keep_prob": latent_keep_prob},
@@ -456,17 +458,23 @@ class ComplexGraph(ExpGraphOneXOneY):
             self.logstd_vae = NNFully(input=self.nn.pred, outputsize=latent_dim_size, resizeinput=False,
                                   layersizes=latent_hidden_layers,
                                   name="logstd_vae")
+            # /!\ self.log_square_std_vae represents tf.log(tf.square(z_stddev))
+
             # sample a N(0,1) same shape as log std
             self.epsilon = tf.random_normal(tf.shape(self.logstd_vae.pred), name='epsilon')
             # get the true std (eg take the exponential
             self.std_vae = tf.exp(.5 * self.logstd_vae.pred)
+            # exp(1/2*x) = y <=> x = log(y^2) indeed
 
             # compute the latent variable
             self.latent_z = self.mu_vae.pred + tf.multiply(self.std_vae, self.epsilon)
-            # TODO I may have a problem here. kl divergence must be added example by example in a minibatch...
-            self.kld = -.5 * tf.reduce_sum(1. + self.logstd_vae.pred - tf.pow(self.mu_vae.pred, 2) - tf.exp(self.logstd_vae.pred),
-                                           # reduction_indices=1,
+            # TODO I may have a problem here (whedn removing reductions_indices=1).
+            # TODO kl divergence must be added example by example in a minibatch...
+            self.kld_ = -.5 * tf.reduce_sum(1. + self.logstd_vae.pred - tf.square(self.mu_vae.pred) - tf.exp(self.logstd_vae.pred),
+                                           reduction_indices=1,
                                            name="kl_divergence")
+            self.kld = tf.reduce_mean(self.kld_)
+
 
     def _have_latent_space(self):
         return self.has_vae
@@ -479,8 +487,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         :return:
         """
         self.mergedsummaryvar = mergedsummaryvar
-        sqrt_dim_size = tf.sqrt(float(self.latent_dim_size))
         if self._have_latent_space():
-            self.loss = tf.add(loss, 1/sqrt_dim_size*self.kld)
+            self.loss = tf.add(loss, 1/self.sqrt_dim_size*self.kld)
         else:
             self.loss = loss
