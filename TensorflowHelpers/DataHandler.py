@@ -515,7 +515,7 @@ class ExpData:
         self.sizemax = sizemax # size maximum of a "minibatch" eg the maximum number of examples that will be fed
         # at once for making a single forward computation
 
-        self.iterator = tf.contrib.data.Iterator.from_structure(
+        self.iterator = tf.data.Iterator.from_structure(
             output_types=self.trainingData.dataset.output_types,
             output_shapes=self.trainingData.dataset.output_shapes)
 
