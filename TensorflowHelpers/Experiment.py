@@ -926,8 +926,10 @@ class Exp:
             # self.parameters.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
             self.model.explogger.tfwriter.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
         # pdb.set_trace()
-        # 3. init the data
+
+        # 3. init the data and graph
         self.data.init(self.sess)
+        self.graph.startexp(self.sess)
 
         if not self.startfromscratch:
             # check that the model didn't do anything stupid while reloading
@@ -953,6 +955,7 @@ class Exp:
         with tqdm(total=self.parameters.num_epoch, desc="Epoch", disable=not self.parameters.showtqdm) as pbar:
             for epochnum in range(self.parameters.num_epoch):
                 is_error_nan = self.runallminibatchesthisepoch()
+                self.graph.tell_epoch(self.sess, epochnum=epochnum)
                 pbar.update(1)
                 if is_error_nan:
                     break
@@ -985,7 +988,6 @@ class Exp:
                 pbar.update(1)
                 if is_error_nan:
                     break
-
         return is_error_nan
 
     def logbeginning(self):
