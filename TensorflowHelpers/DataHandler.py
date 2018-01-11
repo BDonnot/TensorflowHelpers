@@ -276,6 +276,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
                 self.funs_preprocess[k] = fun
         self.donnotcenter = donnotcenter
         # TODO optimization: do not parse the file if you nrows (training set parsed 2 times)
+
+
         # count the number of lines
         if (ms is None) or (sds is None):
             fun_process = self._normalize
@@ -293,6 +295,10 @@ class ExpTFrecordsDataReader(ExpDataReader):
             else:
                 ms_[k] = ms__[k]
                 sds_[k] = sds__[k]
+
+        # if "cali_tempo.tfrecord" in filename :# or 'val.tfrecord' in filename:
+        #     self._normalize(path=pathdata, fn=filename, sizes=sizes)
+        #     pdb.set_trace()
 
         self.ms = self._shape_properly(ms_, name="means") if ms is None else ms
         self.sds = self._shape_properly(sds_, name="stds") if sds is None else sds
@@ -314,7 +320,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
     def _countlines(self, path, fn, sizes):
         """
         :param path: the path where data are located
-        :param fn: the file name
+        :param fn: the file names
         :return: the number of lines of the files (must iterate through it line by line) 
         """
         ms = {el: np.zeros(1) for el in sizes}
@@ -380,6 +386,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
                     count += 1
                     try:
                         pf = sess.run(parsed_features)
+                        # print(np.sum(np.abs(pf["conso_X"])))
+                        # pdb.set_trace()
                         for k in sizes.keys():
                             vect = pf[k]
                             if np.any(~np.isfinite(vect)):
@@ -725,13 +733,14 @@ class ExpData:
             dataset = self.otherdatasets[dataset_name]
             initop = self.otheriterator_init[dataset_name]
         size_dataset = dataset.nrowsX()
+        # pdb.set_trace()
         res = {k: np.zeros(shape=(size_dataset, int(self.ms[k].shape[0]))) for k in varsname}
         orig = {k: np.zeros(shape=(size_dataset, int(self.ms[k].shape[0]))) for k in varsname}
         sess.run(initop)
         previous = 0
         while True:
             try:
-                preds = graph.run(sess, toberun=[graph.vars_out, self.true_data] )
+                preds = graph.run(sess, toberun=[graph.vars_out, self.true_data])
                 size = 0
                 for k in res.keys():
                     # getting the prediction
@@ -743,6 +752,7 @@ class ExpData:
                         tmp = preds[1][k]
                     size = tmp.shape[0]
                     max_range = min(previous+size, size_dataset)
+
                     # rescale it ("un preprossed it")
                     tmp = self.funs_preprocess[k][1](tmp * self.sds[k] + self.ms[k])
                     # storing it in res
@@ -753,10 +763,10 @@ class ExpData:
                     tmp = self.funs_preprocess[k][1](tmp * self.sds[k] + self.ms[k])
                     # storing it in res
                     orig[k][previous:max_range, :] = tmp
-
                 previous += size
             except tf.errors.OutOfRangeError:
                 break
+
         sess.run(self.training_init_op)
         return res, orig
 

@@ -23,6 +23,7 @@ import tensorflow as tf
 from .ANN import NNFully
 from .DataHandler import ExpData
 from .Graph import ExpGraphOneXOneY
+from .Losses import l2
 
 TRAINING_COLLECTION_NAME = "train_op"
 NAMESAVEDTFVARS = 'savedvars'
@@ -438,7 +439,7 @@ class ExpModel:
     def __init__(self,
                  exp_params,
                  data, graph,
-                 lossfun=tf.nn.l2_loss,
+                 lossfun=l2,
                  optimizerClass=tf.train.AdamOptimizer, optimizerkwargs={},
                  netname="",
                  otherinfo={}):
@@ -470,11 +471,12 @@ class ExpModel:
         self.loss = None
 
         with tf.variable_scope("training_loss"):
-            self.losses = {k: self.lossfun(self.inference[k]-true_output_dict[k], name="training_loss_{}".format(k)) for k in self.inference.keys()}
+            self.losses = {k: self.lossfun(self.inference[k], true_output_dict[k], name="training_loss_{}".format(k)) for k in self.inference.keys()}
             self.loss = tf.constant(0., dtype=tf.float32)
             for _, l in self.losses.items():
                 # TODO capability of having ponderated loss!
                 self.loss = self.loss + l
+            self.graph.init_loss(self.loss)
 
         self.optimize=None
         with tf.variable_scope("optimizer"):
@@ -516,7 +518,7 @@ class ExpModel:
                     tf.add_to_collection("LOSSFUNFully" + netname, self.losses[k])
                     tf.add_to_collection("OUTPUTFully" + netname, self.inference[k])
             self.mergedsummaryvar = tf.summary.merge(li_summaries)
-        self.graph.init(self.mergedsummaryvar, self.loss)
+        self.graph.init_summary(self.mergedsummaryvar)
 
         # 4. create the saver object (at the end, because each node of the graph must be saved)
         self.explogger = ExpLogger(
@@ -677,33 +679,43 @@ class ExpModel:
             logger.info("Final MAPE for {} : {:.3f}% ".format(
                 varname, mean_rel_error * 100))
 
-        max_rel_error = np.max(np.abs(error[np.abs(true) >= threshold] /
-                                      true[np.abs(true) >= threshold]))
-        if logger is not None:
-            logger.info("Final max MAPE for {} : {:.3f}% ".format(
-                varname, max_rel_error * 100))
-        b = np.percentile(np.abs(true), 90, axis=0).reshape((1, true.shape[1]))
-        threshold = np.maximum(a, b)
-        mean_abs_error_high = np.mean(np.abs(error[np.abs(true) >= threshold])).astype(np.float32)
-        if logger is not None:
-            logger.info("Final MAE (when abs true_values >= q_90) for {} : {:.3f} ".format(
-                varname, mean_abs_error_high))
+        idx_high = np.abs(true) >= threshold
+        if np.sum(idx_high):
+            max_rel_error = np.max(np.abs(error[idx_high] /
+                                          true[idx_high]))
+            if logger is not None:
+                logger.info("Final max MAPE for {} : {:.3f}% ".format(
+                    varname, max_rel_error * 100))
+            b = np.percentile(np.abs(true), 90, axis=0).reshape((1, true.shape[1]))
+            threshold = np.maximum(a, b)
+            mean_abs_error_high = np.mean(np.abs(error[idx_high])).astype(np.float32)
+            if logger is not None:
+                logger.info("Final MAE (when abs true_values >= q_90) for {} : {:.3f} ".format(
+                    varname, mean_abs_error_high))
+        else:
+            max_rel_error = -1.
+            mean_abs_error_high = -1.
 
-        mean_rel_error_high = np.mean(np.abs(error[np.abs(true) >= threshold] /
-                                             true[np.abs(true) >= threshold]))
-        if logger is not None:
-            logger.info("Final MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
-                varname, 100*mean_rel_error_high))
+        idx_high = np.abs(true) >= threshold
+        if np.sum(idx_high):
+            mean_rel_error_high = np.mean(np.abs(error[idx_high] /
+                                                 true[idx_high]))
+            if logger is not None:
+                logger.info("Final MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
+                    varname, 100*mean_rel_error_high))
 
-        max_rel_error_high = np.max(np.abs(error[np.abs(true) >= threshold] /
-                                           true[np.abs(true) >= threshold]))
-        if logger is not None:
-            logger.info("Final max MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
-                varname, max_rel_error_high * 100))
+            max_rel_error_high = np.max(np.abs(error[idx_high] /
+                                               true[idx_high]))
+            if logger is not None:
+                logger.info("Final max MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
+                    varname, max_rel_error_high * 100))
 
-            logger.info("Mean (abs) value val set for {} : {:.3f}".format(varname, mean_abs_val))
-            logger.info("Std value val set for {} : {:.3f}".format(varname, np.std(true)))
-            logger.info("Max (abs) value val set for {} : {:.3f}".format(varname, max_abs_val))
+                logger.info("Mean (abs) value val set for {} : {:.3f}".format(varname, mean_abs_val))
+                logger.info("Std value val set for {} : {:.3f}".format(varname, np.std(true)))
+                logger.info("Max (abs) value val set for {} : {:.3f}".format(varname, max_abs_val))
+        else:
+            mean_rel_error_high = -1.
+            max_rel_error_high = -1.
 
         if dict_summary is not None:
             dict_summary[varname + "_mean_abs_error"] = "{}".format(mean_abs_error)
