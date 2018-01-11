@@ -9,8 +9,10 @@ def rmse(pred, true, name="loss_rmse"):
 
 def pinball(pred, true, q, name="loss_pinball"):
     loss = tf.abs(pred-true, name="abs")
-    loss = tf.add(loss, q*tf.cast(tf.greater(pred,true), tf.float32), name="add_upper_case")
-    loss = tf.add(loss, (1.0-q)*tf.cast(tf.less(pred,true), tf.float32), name="add_lower_case")
+    loss = tf.add(loss, q*tf.cast(tf.greater(pred, true), tf.float32), name="add_upper_case")
+    loss = tf.add(loss, (1.0-q)*tf.cast(tf.less(pred, true), tf.float32), name="add_lower_case")
+    loss = tf.reduce_sum(loss, axis=1, name="sum_var")
+    loss = tf.reduce_mean(loss, name="mean_examples")
     loss = tf.identity(loss, name=name)
     return loss
 
