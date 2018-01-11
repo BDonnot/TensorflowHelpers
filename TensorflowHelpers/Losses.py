@@ -5,7 +5,7 @@ def l2(pred, true, name="loss_l2"):
     return tf.nn.l2_loss(pred-true, name=name)
 
 def rmse(pred, true, name="loss_rmse"):
-    return tf.sqrt(tf.metrics.mean_squared_error(pred, true, name="mse"), name=name)
+    return tf.sqrt(tf.reduce_mean(tf.reduce_sum(tf.pow(pred-true, 2), axis=1), name="mse"), name=name)
 
 def pinball(pred, true, q, name="loss_pinball"):
     loss = tf.abs(pred-true, name="abs")
