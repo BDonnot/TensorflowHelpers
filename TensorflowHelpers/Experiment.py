@@ -364,7 +364,8 @@ class ExpParam:
                  batch_size=1,
                  num_epoch=1,
                  continue_if_exists=False,
-                 showtqdm=False):
+                 showtqdm=False,
+                 cmd=" ".join(sys.argv)):
         """
         Save the loss (full training / test set) each "self.save_loss" minibatches
         Save the loss (minibatch) each "self.num_savings_minibatch" minibatches
@@ -386,7 +387,10 @@ class ExpParam:
         :param num_epoch: the number of epoch to run
         :param continue_if_exists: if the folder exists, stop do not run the expriment
         :param showtqdm: if False, deactivate display of progress bar
+        :param cmd: the command invoqued to call the script
         """
+
+        self.cmd = cmd
         self.path = path
         self.pathdata = pathdata
         self.params = params
@@ -433,6 +437,10 @@ class ExpParam:
         self.save_model = round(self.total_minibatches / self.num_savings_model)
         if self.save_model == 0:
             self.save_model = 1
+
+    def save_cmd(self, path):
+        with open(os.path.join(path, "cmd"), "a") as f:
+            f.write(self.cmd+"\r\n")
 
 
 class ExpModel:
@@ -856,6 +864,7 @@ class Exp:
                            args=graphargs, kwargs=graphkwargs)
             self._saveinfos(name="model_related",classType=modelType,
                            args=modelargs, kwargs=modelkwargs)
+            self.parameters.save_cmd(self.path)
 
         # tf.reset_default_graph()
         self.data = None
