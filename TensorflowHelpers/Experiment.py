@@ -390,6 +390,10 @@ class ExpParam:
         :param cmd: the command invoqued to call the script
         """
 
+
+        path = re.sub("\"", "", path)
+        name_exp = re.sub("\"", "", name_exp)
+
         self.cmd = cmd
         self.path = path
         self.pathdata = pathdata
@@ -623,7 +627,9 @@ class ExpModel:
         :param sess: 
         :return: 
         """
+        self.explogger.logger.info("_____________beginning checking reloading__________________")
         self.explogger.logtf(minibatchnum=0, graph=self.graph, data=self.data, sess=sess, forcesaving=True)
+        self.explogger.logger.info("_____________end checking reloading__________________")
 
     def computelasterror(self, sess, dict_summary=None):
         """
