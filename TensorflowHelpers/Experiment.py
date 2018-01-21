@@ -23,6 +23,7 @@ import tensorflow as tf
 from .ANN import NNFully
 from .DataHandler import ExpData
 from .Graph import ExpGraphOneXOneY
+from .Losses import l2
 
 TRAINING_COLLECTION_NAME = "train_op"
 NAMESAVEDTFVARS = 'savedvars'
@@ -363,7 +364,8 @@ class ExpParam:
                  batch_size=1,
                  num_epoch=1,
                  continue_if_exists=False,
-                 showtqdm=True):
+                 showtqdm=False,
+                 cmd=" ".join(sys.argv)):
         """
         Save the loss (full training / test set) each "self.save_loss" minibatches
         Save the loss (minibatch) each "self.num_savings_minibatch" minibatches
@@ -385,7 +387,14 @@ class ExpParam:
         :param num_epoch: the number of epoch to run
         :param continue_if_exists: if the folder exists, stop do not run the expriment
         :param showtqdm: if False, deactivate display of progress bar
+        :param cmd: the command invoqued to call the script
         """
+
+
+        path = re.sub("\"", "", path)
+        name_exp = re.sub("\"", "", name_exp)
+
+        self.cmd = cmd
         self.path = path
         self.pathdata = pathdata
         self.params = params
@@ -433,12 +442,16 @@ class ExpParam:
         if self.save_model == 0:
             self.save_model = 1
 
+    def save_cmd(self, path):
+        with open(os.path.join(path, "cmd"), "a") as f:
+            f.write(self.cmd+"\r\n")
+
 
 class ExpModel:
     def __init__(self,
                  exp_params,
                  data, graph,
-                 lossfun=tf.nn.l2_loss,
+                 lossfun=l2,
                  optimizerClass=tf.train.AdamOptimizer, optimizerkwargs={},
                  netname="",
                  otherinfo={}):
@@ -468,12 +481,14 @@ class ExpModel:
             self.inference = {k: tf.identity(v, name="{}".format(k)) for k,v in graph.getoutput().items()}
             true_output_dict = self.graph.get_true_output_dict()
         self.loss = None
+
         with tf.variable_scope("training_loss"):
-            self.losses = {k: self.lossfun(self.inference[k]-true_output_dict[k], name="training_loss_{}".format(k)) for k in self.inference.keys()}
+            self.losses = {k: self.lossfun(self.inference[k], true_output_dict[k], name="training_loss_{}".format(k)) for k in self.inference.keys()}
             self.loss = tf.constant(0., dtype=tf.float32)
             for _, l in self.losses.items():
                 # TODO capability of having ponderated loss!
                 self.loss = self.loss + l
+            self.graph.init_loss(self.loss)
 
         self.optimize=None
         with tf.variable_scope("optimizer"):
@@ -515,7 +530,7 @@ class ExpModel:
                     tf.add_to_collection("LOSSFUNFully" + netname, self.losses[k])
                     tf.add_to_collection("OUTPUTFully" + netname, self.inference[k])
             self.mergedsummaryvar = tf.summary.merge(li_summaries)
-        self.graph.init(self.mergedsummaryvar, self.loss)
+        self.graph.init_summary(self.mergedsummaryvar)
 
         # 4. create the saver object (at the end, because each node of the graph must be saved)
         self.explogger = ExpLogger(
@@ -612,7 +627,9 @@ class ExpModel:
         :param sess: 
         :return: 
         """
+        self.explogger.logger.info("_____________beginning checking reloading__________________")
         self.explogger.logtf(minibatchnum=0, graph=self.graph, data=self.data, sess=sess, forcesaving=True)
+        self.explogger.logger.info("_____________end checking reloading__________________")
 
     def computelasterror(self, sess, dict_summary=None):
         """
@@ -676,33 +693,43 @@ class ExpModel:
             logger.info("Final MAPE for {} : {:.3f}% ".format(
                 varname, mean_rel_error * 100))
 
-        max_rel_error = np.max(np.abs(error[np.abs(true) >= threshold] /
-                                      true[np.abs(true) >= threshold]))
-        if logger is not None:
-            logger.info("Final max MAPE for {} : {:.3f}% ".format(
-                varname, max_rel_error * 100))
-        b = np.percentile(np.abs(true), 90, axis=0).reshape((1, true.shape[1]))
-        threshold = np.maximum(a, b)
-        mean_abs_error_high = np.mean(np.abs(error[np.abs(true) >= threshold])).astype(np.float32)
-        if logger is not None:
-            logger.info("Final MAE (when abs true_values >= q_90) for {} : {:.3f} ".format(
-                varname, mean_abs_error_high))
+        idx_high = np.abs(true) >= threshold
+        if np.sum(idx_high):
+            max_rel_error = np.max(np.abs(error[idx_high] /
+                                          true[idx_high]))
+            if logger is not None:
+                logger.info("Final max MAPE for {} : {:.3f}% ".format(
+                    varname, max_rel_error * 100))
+            b = np.percentile(np.abs(true), 90, axis=0).reshape((1, true.shape[1]))
+            threshold = np.maximum(a, b)
+            mean_abs_error_high = np.mean(np.abs(error[idx_high])).astype(np.float32)
+            if logger is not None:
+                logger.info("Final MAE (when abs true_values >= q_90) for {} : {:.3f} ".format(
+                    varname, mean_abs_error_high))
+        else:
+            max_rel_error = -1.
+            mean_abs_error_high = -1.
 
-        mean_rel_error_high = np.mean(np.abs(error[np.abs(true) >= threshold] /
-                                             true[np.abs(true) >= threshold]))
-        if logger is not None:
-            logger.info("Final MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
-                varname, 100*mean_rel_error_high))
+        idx_high = np.abs(true) >= threshold
+        if np.sum(idx_high):
+            mean_rel_error_high = np.mean(np.abs(error[idx_high] /
+                                                 true[idx_high]))
+            if logger is not None:
+                logger.info("Final MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
+                    varname, 100*mean_rel_error_high))
 
-        max_rel_error_high = np.max(np.abs(error[np.abs(true) >= threshold] /
-                                           true[np.abs(true) >= threshold]))
-        if logger is not None:
-            logger.info("Final max MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
-                varname, max_rel_error_high * 100))
+            max_rel_error_high = np.max(np.abs(error[idx_high] /
+                                               true[idx_high]))
+            if logger is not None:
+                logger.info("Final max MAPE (abs values >= q_90) for {} : {:.3f}% ".format(
+                    varname, max_rel_error_high * 100))
 
-            logger.info("Mean (abs) value val set for {} : {:.3f}".format(varname, mean_abs_val))
-            logger.info("Std value val set for {} : {:.3f}".format(varname, np.std(true)))
-            logger.info("Max (abs) value val set for {} : {:.3f}".format(varname, max_abs_val))
+                logger.info("Mean (abs) value val set for {} : {:.3f}".format(varname, mean_abs_val))
+                logger.info("Std value val set for {} : {:.3f}".format(varname, np.std(true)))
+                logger.info("Max (abs) value val set for {} : {:.3f}".format(varname, max_abs_val))
+        else:
+            mean_rel_error_high = -1.
+            max_rel_error_high = -1.
 
         if dict_summary is not None:
             dict_summary[varname + "_mean_abs_error"] = "{}".format(mean_abs_error)
@@ -843,6 +870,7 @@ class Exp:
                            args=graphargs, kwargs=graphkwargs)
             self._saveinfos(name="model_related",classType=modelType,
                            args=modelargs, kwargs=modelkwargs)
+            self.parameters.save_cmd(self.path)
 
         # tf.reset_default_graph()
         self.data = None
@@ -866,7 +894,7 @@ class Exp:
                                    )
 
         # 3. add the loss, optimizer and saver
-        self.model = modelType( exp_params=self.parameters,
+        self.model = modelType(exp_params=self.parameters,
                                 data=self.data,
                                 graph=self.graph,
                                 otherinfo=otherdsinfo.keys(),
@@ -874,10 +902,10 @@ class Exp:
                                 **modelkwargs)
 
         # 4. create the tensorflow session
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
+        self.config = tf.ConfigProto()
+        self.config.gpu_options.allow_growth = True
         # self.parameters.saver = tf.train.Saver()
-        self.sess = tf.Session(config=config)
+        self.sess = tf.Session(config=self.config)
 
         # 5. defines other quantities needed for additionnal data
         self.timedata = 0  # time to get the data
@@ -925,8 +953,10 @@ class Exp:
             # self.parameters.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
             self.model.explogger.tfwriter.saver.restore(self.sess, os.path.join(self.path, "TFInfo", "ModelTrained_best"))
         # pdb.set_trace()
-        # 3. init the data
+
+        # 3. init the data and graph
         self.data.init(self.sess)
+        self.graph.startexp(self.sess)
 
         if not self.startfromscratch:
             # check that the model didn't do anything stupid while reloading
@@ -952,6 +982,7 @@ class Exp:
         with tqdm(total=self.parameters.num_epoch, desc="Epoch", disable=not self.parameters.showtqdm) as pbar:
             for epochnum in range(self.parameters.num_epoch):
                 is_error_nan = self.runallminibatchesthisepoch()
+                self.graph.tell_epoch(self.sess, epochnum=epochnum)
                 pbar.update(1)
                 if is_error_nan:
                     break
@@ -984,7 +1015,6 @@ class Exp:
                 pbar.update(1)
                 if is_error_nan:
                     break
-
         return is_error_nan
 
     def logbeginning(self):
@@ -1107,9 +1137,15 @@ class Exp:
         return self.data.getpred(self.sess, self.graph, varname, dataset_name=dsname)
 
     def __enter__(self):
+        # kill and delete the previous session (unused, but just to be sure)
+        self.sess.close()
+        del self.sess
+        # recreate a proper session that will be used and delete in __exit__
+        self.sess = tf.Session(config=self.config)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.sess.close()
         del self.sess
         self.model.close()
+        # tf.reset_default_graph()

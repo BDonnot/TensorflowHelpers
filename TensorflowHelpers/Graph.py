@@ -63,7 +63,15 @@ class ExpGraphOneXOneY:
         """
         return sess.run(toberun)
 
-    def init(self, mergedsummaryvar, loss):
+    def init_loss(self, loss):
+        """
+        Assign the summary 'mergedsummaryvar' for easier access
+        :param loss: the loss tensor use for training
+        :return:
+        """
+        self.loss = loss
+
+    def init_summary(self, mergedsummaryvar):
         """
         Assign the summary 'mergedsummaryvar' for easier access
         :param mergedsummaryvar: the summary of everything to be save by tensorboard
@@ -71,7 +79,6 @@ class ExpGraphOneXOneY:
         :return:
         """
         self.mergedsummaryvar = mergedsummaryvar
-        self.loss = loss
 
     def initwn(self, sess):
         """
@@ -113,6 +120,21 @@ class ExpGraphOneXOneY:
         for id, el in self.phs:  # TODO Here !!!
             fd[el] = data[id]
         return sess.run(toberun, feed_dict=fd)
+
+    def startexp(self, sess):
+        """
+        TODO documentation
+        :param sess: 
+        :return: 
+        """
+        pass
+
+    def tell_epoch(self, sess, epochnum):
+        """
+        TODO documentation
+        :return: 
+        """
+        pass
 
 class ExpGraph(ExpGraphOneXOneY):
     def __init__(self, data, var_x_name={"input"}, var_y_name={"output"}, nnType=NNFully, argsNN=(), kwargsNN={},
@@ -219,7 +241,11 @@ class ComplexGraph(ExpGraphOneXOneY):
                  encDecNN=NNFully, args_enc=(), kwargs_enc={},
                  args_dec=(), kwargs_dec={},
                  kwargs_enc_dec=None,
-                 spec_encoding={}):
+                 spec_encoding={},
+                 has_vae=False,
+                 latent_dim_size=None,
+                 latent_hidden_layers=(),
+                 latent_keep_prob=None):
         """
         This class can deal with multiple input/output.
         It will first "encode" with a neural network of type "encDecNN" for each input.
@@ -232,6 +258,11 @@ class ComplexGraph(ExpGraphOneXOneY):
         - self.vars_in
 
         Basically, this should represent the neural network.
+        
+        This class can have a variational auto-encoder part after the intermediate NN of the "ComplexGraph" model
+        The "decoder" of the "ComplexGraph" use the a variational input reconstructed.
+        To compute the latent space, code derived from "https://github.com/tegg89/VAE-Tensorflow" have been used.
+        
         :param data: the dictionnary of input tensor data (key=name, value=tensorflow tensor)
         :param var_x_name: iterable: the names of all the input variables
         :param var_y_name: iterable: the name of  all the output variables
@@ -246,6 +277,10 @@ class ComplexGraph(ExpGraphOneXOneY):
         :param kwargs_enc_dec: 
         :param sizes: the size output by the encoder for each input variable. Dictionnary with key: variable names, value: size
         :param outputsize: the output size for the intermediate / main neural network
+        :param has_vae: do you want to add a variationnal auto encoder (between the output of the intermediate neural network and the decoders) 
+        :param latent_dim_size: the size of the latent space (int)
+        :param latent_hidden_layers: the number of hidden layers of the latent space (ordered iterable of integer)
+        :param latent_keep_prob: keep probability for regular dropout for the building of the latent space (affect only the mean)
         """
 
         self.data = data  # the dictionnary of data pre-processed as produced by an ExpData instance
@@ -253,11 +288,13 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.inputname = var_x_name
         self.data = data
 
+
         if kwargs_enc_dec is not None:
             # TODO make this usage deprecated
             # TODO raise an error if kwargs_enc or kwargs_dec not "empty"
             kwargs_enc = kwargs_enc_dec
             kwargs_dec = kwargs_enc_dec
+
         # dictionnary of "ground truth" data
         self.true_dataY = {k: self.data[k] for k in self.outputname}
         self.true_dataX = {k: self.data[k] for k in self.inputname}
@@ -280,17 +317,44 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.nn = None
         self._buildintermediateNN(nnType=nnType, argsNN=argsNN, input=self.enc_output, outputsize=outputsize, kwargsNN=kwargsNN)
 
-        # 4. build the decodings neural networks
+        # 4. add a variational component if needed
+        inputdec = None
+        # self.has_vae = has_vae
+        # if self._have_latent_space():
+        #     self.output_vae = None
+        #     self.latent_dim_size = None # will be set to the proper value (eg not None in self._build_latent_space)
+        #     self.sqrt_dim_size = None # same as above
+        #     self._build_latent_space(latent_dim_size, latent_hidden_layers, latent_keep_prob)
+        #     inputdec = self.output_vae
+        # else:
+        #     self.kld = None
+        #     inputdec = self.nn.pred
+
+        # 5. build the decodings neural networks
         self.outputDec = {}
         self.decoders = {}
         self.size_out = 0
-        self._builddecoders(encDecNN, args_dec, kwargs_dec)
+        self._builddecoders(encDecNN, args_dec, kwargs_dec, inputdec=inputdec)
 
-        # 5. build structure to retrieve the right information from the concatenated one's
+        # 6. build structure to retrieve the right information from the concatenated one's
         self.vars_out = self.outputDec  # dictionnary of output of the NN
         self.vars_in = self.true_dataX
 
-        # 6. create the fields summary and loss that will be created in ExpModel and assign via "self.init"
+        # 4. add a conditionnal variational component if needed
+        self.has_vae = has_vae
+        if self._have_latent_space():
+            self.output_vae = None
+            self.latent_dim_size = None # will be set to the proper value (eg not None in self._build_latent_space)
+            self.sqrt_dim_size = None # same as above
+            self._build_latent_space(latent_dim_size=latent_dim_size,
+                                     latent_hidden_layers=latent_hidden_layers,
+                                     latent_keep_prob=latent_keep_prob)
+            # inputdec = self.output_vae
+        else:
+            self.kld = None
+            # inputdec = self.nn.pred
+
+        # 7. create the fields summary and loss that will be created in ExpModel and assign via "self.init"
         self.mergedsummaryvar = None
         self.loss = None
 
@@ -306,7 +370,6 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.nn.initwn(sess=sess)
         for _,v in self.decoders.items():
             v.initwn(sess=sess)
-            # pdb.set_trace()
 
     def get_true_output_dict(self):
         """
@@ -377,7 +440,7 @@ class ComplexGraph(ExpGraphOneXOneY):
                     self.encoders[varname] = tmp
                     self.outputEnc[varname] = tmp.pred
                     
-    def _builddecoders(self, encDecNN, args_dec, kwargs_dec):
+    def _builddecoders(self, encDecNN, args_dec, kwargs_dec, inputdec=None):
         """
         Build the decoder networks
         :param sizes: 
@@ -387,11 +450,13 @@ class ComplexGraph(ExpGraphOneXOneY):
         :return: 
         """
         with tf.variable_scope("ComplexGraph_decoding"):
+            if inputdec is None:
+                inputdec = self.nn.pred
             for varname in sorted(self.outputname):
                 with tf.variable_scope(varname):
                     # size_out = sizes[varname]
                     tmp = encDecNN(*args_dec,
-                                   input=self.nn.pred,
+                                   input=inputdec,
                                    outputsize=int(self.data[varname].get_shape()[1]),
                                    **kwargs_dec)
                     self.decoders[varname] = tmp
@@ -412,3 +477,235 @@ class ComplexGraph(ExpGraphOneXOneY):
                          input=input,
                          outputsize=outputsize,
                          **kwargsNN)
+
+    def _build_latent_space_addnoise(self, latent_dim_size, latent_hidden_layers, latent_keep_prob):
+        self.amount_vae_ph = tf.placeholder(dtype=tf.float32, shape=(), name="skip_conn")
+        self.amount_vae = tf.Variable(tf.zeros(shape=self.amount_vae_ph.get_shape(), dtype=tf.float32), trainable=False)
+        self.assign_vae = tf.assign(self.amount_vae, self.amount_vae_ph, name="assign_vae")
+
+        # to activate / deactivate the encoder part of the VAE (deactivate it during predicitons)
+        self.use_vae_enc_ph = tf.placeholder(dtype=tf.float32, shape=(), name="use_vae_pred")
+        # use_vae_pred is set to 1 during training and 0 when making forecast
+        # it deactivated the input of the VAE, making proper predictions
+        self.use_vae_enc = tf.Variable(tf.zeros(shape=self.use_vae_enc_ph.get_shape(), dtype=tf.float32), trainable=False)
+        self.assign_use_vae_enc = tf.assign(self.use_vae_enc, self.use_vae_enc_ph, name="assign_use_vae_enc")
+
+        with tf.variable_scope("ComplexGraph_variational"):
+            # sample a N(0,1) same shape as log std
+            self.epsilon = tf.random_normal(tf.shape(self.nn.pred), name='epsilon')
+            self.kld = tf.constant(0.)
+            self.sqrt_dim_size = tf.constant(1.0)
+
+            self.output_vae = (1.-self.amount_vae)*self.nn.pred + self.amount_vae*self.epsilon
+
+    def _build_latent_space(self, latent_dim_size, latent_hidden_layers, latent_keep_prob):
+        # after the decoder, add a VAE to "predict" hat(y) - y
+        # use of https://wiseodd.github.io/techblog/2016/12/17/conditional-vae/ for conditional vae
+        with tf.variable_scope("ComplexGraph_variational_after"):
+            with tf.variable_scope("variational_fexibility"):
+                var = "y"
+                nn_prediction = self.decoders[var].pred
+                true_values = self.true_dataY[var] - nn_prediction
+
+                # amount of vae i want to have as input (usefull when learning)
+                self.amount_vae_ph = tf.placeholder(dtype=tf.float32, shape=(), name="skip_conn")
+                self.amount_vae = tf.Variable(tf.zeros(shape=self.amount_vae_ph.get_shape(), dtype=tf.float32),
+                                              trainable=False)
+                self.assign_vae = tf.assign(self.amount_vae, self.amount_vae_ph, name="assign_vae")
+
+                # to activate / deactivate the encoder part of the VAE (deactivate it during predicitons)
+                self.use_vae_enc_ph = tf.placeholder(dtype=tf.float32, shape=(), name="use_vae_pred")
+                # use_vae_pred is set to 1 during training and 0 when making forecast
+                # it deactivated the input of the VAE, making proper predictions
+                self.use_vae_enc = tf.Variable(tf.zeros(shape=self.use_vae_enc_ph.get_shape(), dtype=tf.float32),
+                                               trainable=False)
+                self.assign_use_vae_enc = tf.assign(self.use_vae_enc, self.use_vae_enc_ph, name="assign_use_vae_enc")
+
+            # inspired from "https://github.com/tegg89/VAE-Tensorflow/blob/master/model.py"
+            if latent_dim_size is None:
+                latent_dim_size = int(nn_prediction.get_shape()[1])
+            self.latent_dim_size = latent_dim_size
+            self.sqrt_dim_size = 1.0 #tf.sqrt(float(self.latent_dim_size))
+
+            with tf.variable_scope("conditional_info"):
+                # build the conditional info used in the VAE
+                self.infovae = NNFully(input=self.nn.pred, outputsize=latent_dim_size//2, resizeinput=False,
+                                       layersizes=latent_hidden_layers,
+                                       name="build_cond_info")
+
+                # build the VAE encoder
+                nn_prediction_ = tf.concat((nn_prediction, self.infovae.pred), axis=1, name="vae_input_concatenantion")
+
+            with tf.variable_scope("encoder"):
+                self.enc_vae = NNFully(input=nn_prediction_, outputsize=latent_dim_size, resizeinput=False,
+                                             layersizes=latent_hidden_layers,
+                                             name="enc_vae")
+                # build the mean
+                self.mu_vae = NNFully(input=self.enc_vae.pred, outputsize=latent_dim_size, resizeinput=False,
+                                      layersizes=latent_hidden_layers, # kwardslayer={"keep_prob": latent_keep_prob},
+                                      name="mu_vae")
+
+                # We build the var of the VAE
+                self.logstd_vae = NNFully(input=self.enc_vae.pred, outputsize=latent_dim_size, resizeinput=False,
+                                      layersizes=latent_hidden_layers,
+                                      name="logstd_vae")
+                # /!\ self.log_square_std_vae represents tf.log(tf.square(z_stddev))
+
+                # get the true std (eg take the exponential
+                self.std_vae = tf.exp(.5 * self.logstd_vae.pred)
+                # exp(1/2*x) = y <=> x = log(y^2) indeed
+
+            # compute the latent variable
+            with tf.variable_scope("latent_variable"):
+                # sample a N(0,1) same shape as log std
+                self.epsilon = tf.random_normal(tf.shape(self.logstd_vae.pred), name='sample_epsilon')
+                # compute the latent variable (cf. formula in the links)
+                self.latent_z_ = (self.use_vae_enc*(self.mu_vae.pred + tf.multiply(self.std_vae, self.epsilon)) +
+                                (1. - self.use_vae_enc)*self.epsilon )
+
+                self.latent_z = tf.concat((self.latent_z_, self.infovae.pred), axis=1, name="vae_z_concatenantion")
+
+            self.dec_vae = NNFully(input=self.latent_z, outputsize=int(nn_prediction.get_shape()[1]), resizeinput=False,
+                                    layersizes=latent_hidden_layers,
+                                    name="dec_vae")
+
+            with tf.variable_scope("variational_losses"):
+                # TODO I may have a problem here (whedn removing reductions_indices=1).
+                # TODO kl divergence must be added example by example in a minibatch...
+                self.kld_ = -.5 * tf.reduce_sum(1. + self.logstd_vae.pred - tf.square(self.mu_vae.pred) - tf.exp(self.logstd_vae.pred),
+                                               reduction_indices=1,
+                                               name="kl_divergence")
+                self.kld = tf.reduce_sum(self.kld_)
+                self.rec_loss = tf.reduce_sum(tf.square(self.dec_vae.pred - true_values), reduction_indices=1)
+                # TODO change the name!
+                self.kld = tf.reduce_sum(self.kld_+self.rec_loss)
+                # self.output_vae = (1.-self.amount_vae)*self.nn.pred + self.amount_vae*self.dec_vae.pred
+
+            with tf.variable_scope("output_prediciton"):
+                self.output_vae = (self.amount_vae*(self.dec_vae.pred+nn_prediction) +
+                                   (1.-self.amount_vae)*nn_prediction)
+                # recall that dec_vae is an stochastic estimator of "hat(y) - y"
+
+            # TODO make 2 output: one "deterministic" and the other stochastic
+            self.vars_out[var] = self.output_vae
+
+
+    def _build_latent_space_notworking(self, latent_dim_size, latent_hidden_layers, latent_keep_prob):
+        with tf.variable_scope("ComplexGraph_variational"):
+            with tf.variable_scope("ComplexGraph_variational_fexibility"):
+                # must be made between nn.pred and its output is an input of the decodeur
+                self.amount_vae_ph = tf.placeholder(dtype=tf.float32, shape=(), name="skip_conn")
+                self.amount_vae = tf.Variable(tf.zeros(shape=self.amount_vae_ph.get_shape(), dtype=tf.float32),
+                                              trainable=False)
+                self.assign_vae = tf.assign(self.amount_vae, self.amount_vae_ph, name="assign_vae")
+
+                # to activate / deactivate the encoder part of the VAE (deactivate it during predicitons)
+                self.use_vae_enc_ph = tf.placeholder(dtype=tf.float32, shape=(), name="use_vae_pred")
+                # use_vae_pred is set to 1 during training and 0 when making forecast
+                # it deactivated the input of the VAE, making proper predictions
+                self.use_vae_enc = tf.Variable(tf.zeros(shape=self.use_vae_enc_ph.get_shape(), dtype=tf.float32),
+                                               trainable=False)
+                self.assign_use_vae_enc = tf.assign(self.use_vae_enc, self.use_vae_enc_ph, name="assign_use_vae_enc")
+
+            # inspired from "https://github.com/tegg89/VAE-Tensorflow/blob/master/model.py"
+            if latent_dim_size is None:
+                latent_dim_size = int(self.nn.pred.get_shape()[1])
+            self.latent_dim_size = latent_dim_size
+            self.sqrt_dim_size = 1.0 #tf.sqrt(float(self.latent_dim_size))
+
+            # build the VAE
+            self.enc_vae = NNFully(input=self.nn.pred, outputsize=latent_dim_size, resizeinput=False,
+                                         layersizes=latent_hidden_layers,
+                                         name="enc_vae")
+
+            # build the mean
+            self.mu_vae = NNFully(input=self.enc_vae.pred, outputsize=latent_dim_size, resizeinput=False,
+                                  layersizes=latent_hidden_layers, kwardslayer={"keep_prob": latent_keep_prob},
+                                  name="mu_vae")
+
+            # We build the var of the VAE
+            self.logstd_vae = NNFully(input=self.enc_vae.pred, outputsize=latent_dim_size, resizeinput=False,
+                                  layersizes=latent_hidden_layers,
+                                  name="logstd_vae")
+            # /!\ self.log_square_std_vae represents tf.log(tf.square(z_stddev))
+
+            # sample a N(0,1) same shape as log std
+            self.epsilon = tf.random_normal(tf.shape(self.logstd_vae.pred), name='epsilon')
+            # get the true std (eg take the exponential
+            self.std_vae = tf.exp(.5 * self.logstd_vae.pred)
+            # exp(1/2*x) = y <=> x = log(y^2) indeed
+
+            # compute the latent variable
+            self.latent_z = self.use_vae_enc*(self.mu_vae.pred + tf.multiply(self.std_vae, self.epsilon)) + \
+                            (1.-self.use_vae_enc)*self.epsilon
+            # TODO I may have a problem here (whedn removing reductions_indices=1).
+            # TODO kl divergence must be added example by example in a minibatch...
+            self.kld_ = -.5 * tf.reduce_sum(1. + self.logstd_vae.pred - tf.square(self.mu_vae.pred) - tf.exp(self.logstd_vae.pred),
+                                           reduction_indices=1,
+                                           name="kl_divergence")
+            # self.kld = tf.reduce_sum(self.kld_)
+
+            self.dec_vae = NNFully(input=self.latent_z, outputsize=int(self.nn.pred.get_shape()[1]), resizeinput=False,
+                                    layersizes=latent_hidden_layers,
+                                    name="dec_vae")
+
+            self.rec_loss = tf.reduce_sum(tf.square(self.dec_vae.pred - self.nn.pred), reduction_indices=1)
+            # TODO change the name!
+            self.kld = tf.reduce_sum(self.kld_+self.rec_loss)
+            self.output_vae = (1.-self.amount_vae)*self.nn.pred + self.amount_vae*self.dec_vae.pred
+
+
+    def _have_latent_space(self):
+        return self.has_vae
+
+    def init_loss(self, loss):
+        """
+        Assign the loss
+        :param loss: the loss tensor use for training (reconstruction loss) : I need to add the KL-divergence loss if vae is used
+        :return:
+        """
+        self.loss = loss
+        if self._have_latent_space():
+            var_latent = "y"
+            self.loss[var_latent] = tf.add(loss, 1/self.sqrt_dim_size*self.kld)
+            loss = self.loss
+
+    def init_summary(self, mergedsummaryvar):
+        """
+        Assign the summary 'mergedsummaryvar' for easier access
+        :param mergedsummaryvar: the summary of everything to be save by tensorboard
+        :return:
+        """
+        self.mergedsummaryvar = mergedsummaryvar
+
+    def startexp(self, sess):
+        """
+        TODO documentation
+        :param sess: 
+        :return: 
+        """
+        if self.has_vae:
+            sess.run([self.assign_vae,self.assign_use_vae_enc],
+                     feed_dict={self.amount_vae_ph: 1.0, self.use_vae_enc_ph: 1.0})
+
+    def tell_epoch(self, sess, epochnum):
+        """
+        TODO documentation
+        :return: 
+        """
+        start_ = 250
+        end_ = 500
+        if self.has_vae:
+            if epochnum <= start_:
+                pass
+            elif epochnum <= end_:
+                tmp_ = min((epochnum-start_)/(end_-start_), 1.)
+                # print("Epoch {} -> Setting VAE to {}".format(epochnum, tmp_))
+                sess.run(self.assign_vae, feed_dict={self.amount_vae_ph: tmp_})
+                # print("Amount VAE {}".format(sess.run(self.amount_vae)))
+            else:
+                pass
+            if epochnum >= 499:
+                print("use_vae_enc_ph: set to 0")
+                sess.run(self.assign_use_vae_enc,
+                         feed_dict={self.use_vae_enc_ph: 0.0})
