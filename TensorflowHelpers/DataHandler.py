@@ -321,6 +321,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
         sds = {el: np.ones(1) for el in sizes}
         nb_total = 0
         for fn_ in [os.path.join(path, el) for el in fn]:
+            nb = 0
             for nb, record in enumerate(tf.python_io.tf_record_iterator(fn_)):
                 pass
             nb_total += nb+1
