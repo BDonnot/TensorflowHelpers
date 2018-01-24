@@ -628,7 +628,10 @@ class ExpModel:
         :return: 
         """
         self.explogger.logger.info("_____________beginning checking reloading__________________")
-        self.explogger.logtf(minibatchnum=0, graph=self.graph, data=self.data, sess=sess, forcesaving=True)
+        try:
+            self.explogger.logtf(minibatchnum=0, graph=self.graph, data=self.data, sess=sess, forcesaving=True)
+        except tf.errors.OutOfRangeError:
+            self.explogger.logger.info("initial test not done, at least one dataset for train or validation is empty")
         self.explogger.logger.info("_____________end checking reloading__________________")
 
     def computelasterror(self, sess, dict_summary=None):
