@@ -19,10 +19,10 @@ def pinball(pred, true, q, name="loss_pinball"):
 def pinball_multi_q(pred, true, qs, name="loss_pinball"):
     loss = tf.constant(0., tf.float32)
     for q in qs:
-        loss = tf.add(loss,pinball(pred, true, q))
+        loss = tf.add(loss, pinball(pred, true, q))
     loss = tf.identity(loss, name=name)
     return loss
 
 
 def sigmoid_cross_entropy_with_logits(pred, true, name="sigmoid_cross_entropy_with_logits"):
-    return tf.nn.sigmoid_cross_entropy_with_logits(logits=pred, labels=true, name=name)
+    return tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(logits=pred, labels=true, name=name))

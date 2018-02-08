@@ -483,7 +483,8 @@ class ExpModel:
         self.loss = None
 
         with tf.variable_scope("training_loss"):
-            self.losses = {k: self.lossfun(self.inference[k], true_output_dict[k], name="training_loss_{}".format(k)) for k in self.inference.keys()}
+            self.losses = {k: self.lossfun(self.inference[k], true_output_dict[k], name="training_loss_{}".format(k)) \
+                           for k in self.inference.keys()}
             self.loss = tf.constant(0., dtype=tf.float32)
             for _, l in self.losses.items():
                 # TODO capability of having ponderated loss!
