@@ -281,7 +281,8 @@ class DenseBlock:
 
 class NNFully:
     def __init__(self, input, outputsize, layersizes=(), weightnorm=False, bias=True,
-                 layerClass=DenseLayer, kwardslayer={}, resizeinput=False, name=None):
+                 layerClass=DenseLayer, kwardslayer={}, resizeinput=False, name=None,
+                 outputnonlin=tf.identity):
         """
         Most classical form of neural network,
         It takes intput as input, add hidden layers of sizes in layersizes.
@@ -351,7 +352,7 @@ class NNFully:
         self.output = layerClass(input=z, size=outputsize, relu=False, bias=bias,
                                  weight_normalization=weightnorm,
                                  layernum=name+"last", keep_prob=None)
-        self.pred = tf.identity(self.output.res, name="output")
+        self.pred = outputnonlin(self.output.res, name="output")
 
     def getnbparam(self):
         """
