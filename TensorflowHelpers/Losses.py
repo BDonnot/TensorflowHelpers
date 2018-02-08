@@ -24,7 +24,7 @@ def pinball_multi_q(pred, true, qs, name="loss_pinball"):
     return loss
 
 
-def sigmoid_cross_entropy_with_logits(pred, true, qs, name="sigmoid_cross_entropy_with_logits"):
+def sigmoid_cross_entropy_with_logits(pred, true, name="sigmoid_cross_entropy_with_logits"):
     loss = tf.constant(0., tf.float32)
     for q in qs:
         loss = tf.add(loss,pinball(pred, true, q))
