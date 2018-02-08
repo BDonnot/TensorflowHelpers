@@ -282,7 +282,7 @@ class DenseBlock:
 class NNFully:
     def __init__(self, input, outputsize, layersizes=(), weightnorm=False, bias=True,
                  layerClass=DenseLayer, kwardslayer={}, resizeinput=False, name=None,
-                 outputnonlin=tf.identity):
+                 output_nonlin=tf.identity):
         """
         Most classical form of neural network,
         It takes intput as input, add hidden layers of sizes in layersizes.
@@ -300,6 +300,7 @@ class NNFully:
         :param kwardslayer: keyword arguments forwarded when building the layer networks compatible with class "layerClass"
         :param resizeinput: do you want to scale, prior to do any computation, your input to have the same size as your output
         :param name: a name (optional) for this 
+        :param output_nonlin: non linearity at the output of the neural network
         
         if kwardslayer is a dcitionnary, the same "kwardslayer" will be used for alllayer. If you want specific
         "kwardslayer" per layer, use a list of the same size of "layersizes"
@@ -339,9 +340,8 @@ class NNFully:
                 msg += "of type {} but only {} (same arguments for every layer) "
                 msg +="and {} (different argument for each layer) are understood."
                 raise RuntimeError(msg.format(kwardslayer, type(kwardslayer), type({}), type([])))
-
             new_layer = layerClass(input=z, size=ls, relu=True, bias=bias,
-                                   weight_normalization=weightnorm, layernum=name+str(i), **tmp_kw)
+                                       weight_normalization=weightnorm, layernum=name+str(i), **tmp_kw)
             self.layers.append(new_layer)
             z = new_layer.res
 
@@ -352,7 +352,7 @@ class NNFully:
         self.output = layerClass(input=z, size=outputsize, relu=False, bias=bias,
                                  weight_normalization=weightnorm,
                                  layernum=name+"last", keep_prob=None)
-        self.pred = outputnonlin(self.output.res, name="output")
+        self.pred = output_nonlin(self.output.res, name="output")
 
     def getnbparam(self):
         """

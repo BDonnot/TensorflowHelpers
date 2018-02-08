@@ -477,10 +477,13 @@ class ComplexGraph(ExpGraphOneXOneY):
         :param kwargsNN: 
         :return: 
         """
-        self.nn = nnType(*argsNN,
-                         input=input,
-                         outputsize=outputsize,
-                         **kwargsNN)
+        try:
+            self.nn = nnType(*argsNN,
+                             input=input,
+                             outputsize=outputsize,
+                             **kwargsNN)
+        except:
+            pdb.set_trace()
 
     def _build_latent_space_addnoise(self, latent_dim_size, latent_hidden_layers, latent_keep_prob):
         self.amount_vae_ph = tf.placeholder(dtype=tf.float32, shape=(), name="skip_conn")
