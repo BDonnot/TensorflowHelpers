@@ -55,12 +55,21 @@ class ExpDataReader:
         """
         pass
 
+    def _shape_properly(self, ms, name):
+        """
+        Transform a dictionnary of numpy array in a dictionnary of tensorflow tensor
+        :param ms: 
+        :param name: 
+        :return: 
+        """
+        return {k: tf.convert_to_tensor(v, name="{}_{}".format(name, k), dtype=tf.float32) for k, v in ms.items()}
+
 # TODO refactor ExpCSVDataReader and ExpTFrecordDataReader
 # TODO at least _nrows, _ncols and _shape_properly are copy paste.
 # TODO beside the logic is exactly the same!
 class ExpCSVDataReader(ExpDataReader):
     def __init__(self, train, batch_size, pathdata=".",
-                 filenames={"input": "X.csv", "output": "Y.csv"},
+                 filename={"input": "X.csv", "output": "Y.csv"},
                  sizes={"input":1, "output":1},
                  num_thread=4, donnotcenter={},
                  fun_preprocess=lambda x: x,
@@ -69,13 +78,13 @@ class ExpCSVDataReader(ExpDataReader):
         :param train: if true concern the training set
         :param batch_size: number of data to unpack each time
         :param pathdata: path where the data are stored
-        :param filenames: names of the files with input data and output data [should be a 2 keys dictionnaries with keys "input" and "output"]
+        :param filenames: names of the files with input data and output data [should be a  dictionnary with keys as sizes]
         :param sizes: number of columns of the data in X and Y [should be a 2 keys dictionnaries with keys "input" and "output"]
         :param other_dataset: other files (same format as
         :param num_thread: number of thread to read the data
         :param donnotcenter: iterable: variable that won't be centered/reduced
-        :param ms: means of X data set (used for validation instead -- of recomputing the mean)
-        :param sds: standard deviation of Y data set (used for validation -- instead of recomputing the std)
+        :param ms: means of X data set (used for validation instead of recomputing the mean)
+        :param sds: standard deviation of Y data set (used for validation instead of recomputing the std)
         """
         ExpDataReader.__init__(self, train=train, batch_size=batch_size)
         self.sizes = sizes
@@ -87,7 +96,8 @@ class ExpCSVDataReader(ExpDataReader):
         else:
             fun_process = self._countlines
 
-        ms__, sds__, self.nrows = fun_process(path=pathdata, fns=filenames, sizes=sizes)
+        ms__, sds__, self.nrows = fun_process(path=pathdata, fns=filename, sizes=sizes)
+
         ms_ = {}
         sds_ = {}
         for k in ms__.keys():
@@ -98,32 +108,25 @@ class ExpCSVDataReader(ExpDataReader):
                 ms_[k] = ms__[k]
                 sds_[k] = sds__[k]
 
-        self.ms = self._shape_properly(ms_) if ms is None else ms
-        self.sds = self._shape_properly(sds_) if sds is None else sds
+        self.ms = self._shape_properly(ms_, name="means") if ms is None else ms
+        self.sds = self._shape_properly(sds_, name="stds") if sds is None else sds
 
+        self.datasets = {}
 
-        self.dataX = tf.contrib.data.TextLineDataset(
-            [os.path.join(pathdata, filenames[0])]).skip(1).map(
-            lambda line: self._parse_function(line, size=sizes[0], m=self.ms["input"], std=self.sds["input"]),
-            num_threads=num_thread,
-            output_buffer_size=num_thread * 5
-        )
-        self.dataY = tf.contrib.data.TextLineDataset(
-            [os.path.join(pathdata, filenames[1])]).skip(1).map(
-            lambda line: self._parse_function(line, size=sizes[1], m=self.ms["output"], std=self.sds["output"]),
-            num_threads=num_thread,
-            output_buffer_size=num_thread * 5
-        )
+        for el in sizes.keys():
+            self.datasets[el] = tf.data.TextLineDataset(
+                [os.path.join(pathdata, filename[el])]).skip(1).map(
+                lambda line: self._parse_function(line, size=sizes[el], m=self.ms[el], std=self.sds[el]),
+                num_parallel_calls=num_thread
+            ).prefetch(num_thread * 5)
 
-        self.dataset = tf.contrib.data.Dataset.zip({"input": self.dataX, "output": self.dataY})
+        self.dataset = tf.data.Dataset.zip(self.datasets)
         if train:
             self.dataset = self.dataset.repeat(-1)
             self.dataset = self.dataset.shuffle(buffer_size=10000)
         else:
             self.dataset = self.dataset.repeat(1)
         self.dataset = self.dataset.batch(batch_size=batch_size)
-
-
 
     def _normalize(self, path, sizes, fns):
         """
@@ -133,21 +136,37 @@ class ExpCSVDataReader(ExpDataReader):
         :param fns: a dictionnary (with keys ["input", "output"]) containing the names of the datasets
         :return: 
         """
-        mX, sdX, nrowsX = self._normalize_aux(path, size=sizes["input"], fn=fns["input"])
-        mY, sdY, nrowsY = self._normalize_aux(path, size=sizes["output"], fn=fns["output"])
-        if nrowsX != nrowsY:
-            error_str = "ExpCSVDataReader._normalize: The files {} and {} (located at {}) "
-            error_str += "does not count the same number of lines."
-            raise RuntimeError(error_str.format(fns["input"], fns["output"], path))
 
-        ms = {"input": mX, "output": mY}
-        sds = {"input": sdX, "output": sdY}
-        return ms, sds, nrowsX
+        ms = {}
+        sds = {}
+        nrows = None
+        prev_files = set()
+        for key in sizes.keys():
+            m, sd, nrows_tmp = self._normalize_aux(path, size=sizes[key], fn=fns[key])
+            ms[key] = m
+            sds[key] = sd
+            if nrows is not None:
+                if nrows_tmp != nrows:
+                    error_str = "ExpCSVDataReader._normalize: The files {} and {} (located at {}) "
+                    error_str += "does not count the same number of lines."
+                    raise RuntimeError(error_str.format(fns["input"], prev_files, path))
+            prev_files.add(fns[key])
+
+        # mX, sdX, nrowsX = self._normalize_aux(path, size=sizes["input"], fn=fns["input"])
+        # mY, sdY, nrowsY = self._normalize_aux(path, size=sizes["output"], fn=fns["output"])
+        # if nrowsX != nrowsY:
+        #     error_str = "ExpCSVDataReader._normalize: The files {} and {} (located at {}) "
+        #     error_str += "does not count the same number of lines."
+        #     raise RuntimeError(error_str.format(fns["input"], fns["output"], path))
+        #
+        # ms = {"input": mX, "output": mY}
+        # sds = {"input": sdX, "output": sdY}
+        return ms, sds, nrows
 
     def _normalize_aux(self, path, size, fn):
         """
         Compute some statistics of the file fn.
-        fn should be a csv file with a coma separator, copntaining only float objects, with a single header line.
+        fn should be a csv file with a semi-colon separator, copntaining only float objects, with a single header line.
         :param path: the path where the file is
         :param size: dimension of the file (number of columns)
         :param fn: the file name
@@ -179,16 +198,21 @@ class ExpCSVDataReader(ExpDataReader):
         :param fns: the file name
         :return: the mean, the standard deviation, and the number of rows
         """
-        cX = self._countlines_aux(path, fn=fns["input"])
-        cY = self._countlines_aux(path, fn=fns["input"])
-        if cX != cY:
-            error_str = "ExpCSVDataReader._normalize: The files {} and {} (located at {}) "
-            error_str += "does not count the same number of lines."
-            raise RuntimeError(error_str.format(fns["input"], fns["output"], path))
 
-        ms = {"input": np.zeros(1), "output": np.zeros(1)}
-        sds = {"input": np.ones(1), "output": np.ones(1)}
-        return ms, sds, cX
+        nrows = None
+        prev_files = set()
+        for key in sizes.keys():
+            nrows_tmp = self._countlines_aux(path, fn=fns[key])
+            if nrows is not None:
+                if nrows_tmp != nrows:
+                    error_str = "ExpCSVDataReader._normalize: The files {} and {} (located at {}) "
+                    error_str += "does not count the same number of lines."
+                    raise RuntimeError(error_str.format(fns[key], prev_files, path))
+            nrows = nrows_tmp
+            prev_files.add(fns[key])
+        ms = {k: np.zeros(v) for k, v in sizes.items()}
+        sds = {k: np.ones(v) for k, v in sizes.items()}
+        return ms, sds, nrows
 
     def _countlines_aux(self, path, fn):
         """
@@ -231,14 +255,6 @@ class ExpCSVDataReader(ExpDataReader):
         """
         return self.nrows
 
-    def _shape_properly(self, ms):
-        """
-        Transform a dictionnary of numpy array in a dictionnary of tensorflow tensor
-        :param ms: 
-        :return: 
-        """
-        return {k: tf.convert_to_tensor(v, name="mean_{}".format(k), dtype=tf.float32) for k, v in ms.items()}
-
 class ExpTFrecordsDataReader(ExpDataReader):
     def __init__(self, train, batch_size, donnotcenter={},
                  pathdata=".",
@@ -246,7 +262,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
                  sizes={"input":1, "output":1},
                  num_thread=4,
                  ms=None, sds=None,
-                 fun_preprocess=None):
+                 fun_preprocess=None,
+                 add_noise={}):
         """
         ms (and sds) should be None or dictionnaries with at least the keys in vars, and tensorflow float32 tensors as values
         
@@ -260,8 +277,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
         :param ms: means of data set (used for validation instead -- of recomputing the mean). 
         :param sds: standard deviation of data set (used for validation instead -- of recomputing the mean)
         :param fun_preprocess: fun use to preprocess data (before centering / reducing), (dictionnary with variable name as key)
+        :param add_noise: iterable: in which data do you add noise 
         """
-        #TODO handle case where there are multiple tfrecords !
         if type(filename) == type(""):
             filename = {filename}
         ExpDataReader.__init__(self, train=train, batch_size=batch_size)
@@ -275,8 +292,16 @@ class ExpTFrecordsDataReader(ExpDataReader):
             for k, fun in fun_preprocess.items():
                 self.funs_preprocess[k] = fun
         self.donnotcenter = donnotcenter
-        # TODO optimization: do not parse the file if you nrows (training set parsed 2 times)
+        # TODO optimization: do not parse the file if you know nrows (training set parsed 2 times)
 
+        # add noise when training, with customizable variance
+        if len(add_noise) and train:
+            self.sigma_noise = tf.get_variable(name="noise_std", trainable=False)
+            self.amount_noise_ph = tf.placeholder(dtype=tf.float32, shape=(), name="skip_conn")
+            self.assign_noise = tf.assign(self.sigma_noise, self.amount_noise_ph, name="assign_noise_std")
+        else:
+            self.amount_noise_ph = tf.placeholder(dtype=tf.float32, shape=(), name="skip_conn")
+            self.assign_noise = tf.no_op(name="donothing_noise_std")
 
         # count the number of lines
         if (ms is None) or (sds is None):
@@ -423,15 +448,6 @@ class ExpTFrecordsDataReader(ExpDataReader):
             for k,v in stds.items():
                 stds[k][stds[k] <= 1e-3] = 1.0
         return ms, stds, count
-
-    def _shape_properly(self, ms, name):
-        """
-        Transform a dictionnary of numpy array in a dictionnary of tensorflow tensor
-        :param ms: 
-        :param name: 
-        :return: 
-        """
-        return {k: tf.convert_to_tensor(v, name="{}_{}".format(name, k), dtype=tf.float32) for k, v in ms.items()}
 
     def _nrows(self, array):
         """

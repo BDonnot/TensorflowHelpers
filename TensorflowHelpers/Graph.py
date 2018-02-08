@@ -428,6 +428,10 @@ class ComplexGraph(ExpGraphOneXOneY):
         with tf.variable_scope("ComplexGraph_encoding"):
             for varname in sorted(self.inputname):
                 with tf.variable_scope(varname):
+                    if not varname in sizes:
+                        msg = "ComplexGraph._buildencoders the variable {} is not in \"sizes\" argument but in \"var_x_name\""
+                        msg += " (or \"var_y_name\")"
+                        raise RuntimeError(msg.format(varname))
                     size_out = sizes[varname]
                     if varname in spec_encoding:
                         input_tmp=spec_encoding[varname](self.data[varname])
