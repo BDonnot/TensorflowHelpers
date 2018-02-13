@@ -26,3 +26,8 @@ def pinball_multi_q(pred, true, qs, name="loss_pinball"):
 
 def sigmoid_cross_entropy_with_logits(pred, true, name="sigmoid_cross_entropy_with_logits"):
     return tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(logits=pred, labels=true, name=name))
+
+def softmax_cross_entropy(pred, true, name="sigmoid_cross_entropy_with_logits"):
+    loss = tf.reduce_sum(tf.losses.softmax_cross_entropy(logits=pred, onehot_labels=true))
+    loss = tf.identity(loss, name=name)
+    return loss

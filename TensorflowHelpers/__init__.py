@@ -10,7 +10,7 @@ from .Experiment import ExpParam, ExpSaverParam  # parameters for an experiment
 from .Experiment import ExpModel  # model you want to use
 from .Experiment import Exp #, ExpManager # the experience
 
-from .Losses import l2, rmse, pinball, pinball_multi_q, sigmoid_cross_entropy_with_logits
+from .Losses import l2, rmse, pinball, pinball_multi_q, sigmoid_cross_entropy_with_logits, softmax_cross_entropy
 
 from .Emulator import EmulLog
 
