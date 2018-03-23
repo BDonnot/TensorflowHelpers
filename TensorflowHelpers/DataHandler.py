@@ -355,8 +355,10 @@ class ExpTFrecordsDataReader(ExpDataReader):
             nb = 0
             for nb, record in enumerate(tf.python_io.tf_record_iterator(fn_)):
                 pass
-            nb_total += nb+1
-            # don't forget to add 1 because python start at 0!
+            if nb != 0:
+                # if the file is empty, we don't have to add one line...
+                nb_total += nb+1
+                # don't forget to add 1 because python start at 0!
         return ms, sds, nb_total
 
     def _parse_function(self, example_proto, sizes, ms, stds):
