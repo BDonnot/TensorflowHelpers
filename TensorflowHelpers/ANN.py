@@ -331,9 +331,9 @@ class NNFully:
 
         #hidden layers
         for i, ls in enumerate(layersizes):
-            if type(kwardslayer) == type({}):
+            if isinstance(kwardslayer, type({})):
                 tmp_kw = kwardslayer
-            elif type(kwardslayer) == type([]):
+            elif isinstance(kwardslayer, type([])):
                 tmp_kw = kwardslayer[i]
             else:
                 msg = "NNFully: wrong \"kwardslayer\" type argument speficified. You provided {} "
@@ -349,7 +349,7 @@ class NNFully:
         self.output = None
         self.pred = None
         # with tf.variable_scope("last_dense_layer", reuse=reuse):
-        self.output = layerClass(input=z, size=outputsize, relu=False, bias=bias,
+        self.output = DenseLayer(input=z, size=outputsize, relu=False, bias=bias,
                                  weight_normalization=weightnorm,
                                  layernum=name+"last", keep_prob=None)
         self.pred = output_nonlin(self.output.res, name="output")
