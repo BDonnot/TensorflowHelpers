@@ -674,9 +674,13 @@ class ExpModel:
         :return: 
         """
         error = pred - true
-        mean_abs_error = np.mean(np.abs(error))
-        mean_abs_val = np.mean(np.abs(true))
-        max_abs_val = np.max(np.abs(true))
+        try:
+            mean_abs_error = np.mean(np.abs(error))
+            mean_abs_val = np.mean(np.abs(true))
+            max_abs_val = np.max(np.abs(true))
+        except ValueError as e:
+            print("logfinalerror : error\n \"\"\"\n{}\n\"\"\" occured. Not log will be computed".format(e))
+            return
 
         if logger is None:
             logger = self.explogger.logger
