@@ -70,6 +70,7 @@ class ExpGraphOneXOneY:
         :return:
         """
         self.loss = loss
+        return loss
 
     def init_summary(self, mergedsummaryvar):
         """
@@ -676,6 +677,7 @@ class ComplexGraph(ExpGraphOneXOneY):
             var_latent = "y"
             self.loss[var_latent] = tf.add(loss, 1/self.sqrt_dim_size*self.kld)
             loss = self.loss
+        return loss
 
     def init_summary(self, mergedsummaryvar):
         """

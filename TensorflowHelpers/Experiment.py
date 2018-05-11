@@ -489,8 +489,8 @@ class ExpModel:
             for _, l in self.losses.items():
                 # TODO capability of having ponderated loss!
                 self.loss = self.loss + l
-            self.graph.init_loss(self.loss)
-
+            self.loss = self.graph.init_loss(self.loss)
+        # pdb.set_trace()
         self.optimize=None
         with tf.variable_scope("optimizer"):
             self.optimize = optimizerClass(
