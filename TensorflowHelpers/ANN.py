@@ -4,7 +4,7 @@ import pdb
 import numpy as np
 import tensorflow as tf
 
-DTYPE_USED=tf.float32
+DTYPE_USED=tf.float16
 
 class DenseLayer:
     def __init__(self, input, size, relu=False, bias=True, weight_normalization=False,

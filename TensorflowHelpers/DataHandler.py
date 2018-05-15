@@ -7,6 +7,8 @@ import pdb
 import numpy as np
 import tensorflow as tf
 
+from .ANN import DTYPE_USED
+
 # TODO READER: make them behave equally well, for now only TFRecordReader can preprocess for example
 # TODO: READERS: correct the but when encountering nan's or infinite value in all reader classes
 # TODO: have a better implementation of preprocessing function
@@ -22,7 +24,7 @@ class ExpDataReader:
         self.dataX = np.zeros(
             (0, 0), dtype=np.float32)  # main data set (eg the training set)
         # main data set (eg the training set)
-        self.dataY = np.zeros((0, 0), dtype=np.float32)
+        self.dataY = np.zeros((0, 0), dtype=DTYPE_USED)
         self.dataset = tf.data.Dataset.from_tensor_slices(
             (self.dataX, self.dataY))
 
@@ -62,7 +64,7 @@ class ExpDataReader:
         :param name: 
         :return: 
         """
-        return {k: tf.convert_to_tensor(v, name="{}_{}".format(name, k), dtype=tf.float32) for k, v in ms.items()}
+        return {k: tf.convert_to_tensor(v, name="{}_{}".format(name, k), dtype=DTYPE_USED) for k, v in ms.items()}
 
 # TODO refactor ExpCSVDataReader and ExpTFrecordDataReader
 # TODO at least _nrows, _ncols and _shape_properly are copy paste.
@@ -297,10 +299,10 @@ class ExpTFrecordsDataReader(ExpDataReader):
         # add noise when training, with customizable variance
         if len(add_noise) and train:
             self.sigma_noise = tf.get_variable(name="noise_std", trainable=False)
-            self.amount_noise_ph = tf.placeholder(dtype=tf.float32, shape=(), name="skip_conn")
+            self.amount_noise_ph = tf.placeholder(dtype=DTYPE_USED, shape=(), name="skip_conn")
             self.assign_noise = tf.assign(self.sigma_noise, self.amount_noise_ph, name="assign_noise_std")
         else:
-            self.amount_noise_ph = tf.placeholder(dtype=tf.float32, shape=(), name="skip_conn")
+            self.amount_noise_ph = tf.placeholder(dtype=DTYPE_USED, shape=(), name="skip_conn")
             self.assign_noise = tf.no_op(name="donothing_noise_std")
 
         # count the number of lines
@@ -615,7 +617,7 @@ class ExpData:
         :param ms: 
         :return: 
         """
-        return {k: tf.convert_to_tensor(v, name="{}_{}".format(name, k), dtype=tf.float32) for k, v in ms.items()}
+        return {k: tf.convert_to_tensor(v, name="{}_{}".format(name, k), dtype=DTYPE_USED) for k, v in ms.items()}
 
     def getnrows(self):
         """
@@ -813,7 +815,7 @@ class ExpData:
         init = np.ndarray(
             (dataset.nrowsX(),
              dataset.ncolsY()),
-            dtype="float32")
+            dtype=DTYPE_USED)
         return init
 
     def getdata(self):
