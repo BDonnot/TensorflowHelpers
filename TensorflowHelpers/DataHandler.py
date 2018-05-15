@@ -23,7 +23,7 @@ class ExpDataReader:
             (0, 0), dtype=np.float32)  # main data set (eg the training set)
         # main data set (eg the training set)
         self.dataY = np.zeros((0, 0), dtype=np.float32)
-        self.dataset = tf.contrib.data.Dataset.from_tensor_slices(
+        self.dataset = tf.data.Dataset.from_tensor_slices(
             (self.dataX, self.dataY))
 
         self.ms = {"input": tf.constant(0.), "output": tf.constant(0.)}
@@ -395,12 +395,11 @@ class ExpTFrecordsDataReader(ExpDataReader):
         with tf.variable_scope("datareader_compute_means_vars"):
             ms = {k:tf.constant(0.0, name="fake_means") for k,_ in sizes.items()}
             sds = {k:tf.constant(1.0, name="fake_stds") for k,_ in sizes.items()}
-            dataset = tf.contrib.data.TFRecordDataset(
+            dataset = tf.data.TFRecordDataset(
                 [os.path.join(path, el) for el in fn]).map(
                 lambda line: self._parse_function(example_proto=line, sizes=sizes, ms=ms, stds=sds),
-                num_threads=self.num_thread,
-                output_buffer_size=self.num_thread * 5
-            ).batch(self.num_thread).repeat(1)
+                num_parallel_calls=self.num_thread
+            ).prefetch(self.num_thread * 5).batch(self.num_thread).repeat(1)
             iterator = dataset.make_one_shot_iterator()
             parsed_features = iterator.get_next(name="fake_iterator")
 
