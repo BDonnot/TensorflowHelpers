@@ -24,7 +24,7 @@ class ExpDataReader:
         self.dataX = np.zeros(
             (0, 0), dtype=np.float32)  # main data set (eg the training set)
         # main data set (eg the training set)
-        self.dataY = np.zeros((0, 0), dtype=DTYPE_USED)
+        self.dataY = np.zeros((0, 0), dtype= np.float16 if DTYPE_USED == tf.float16 else np.float32 )
         self.dataset = tf.data.Dataset.from_tensor_slices(
             (self.dataX, self.dataY))
 
