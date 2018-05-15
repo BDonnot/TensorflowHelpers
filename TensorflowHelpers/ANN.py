@@ -4,6 +4,7 @@ import pdb
 import numpy as np
 import tensorflow as tf
 
+DTYPE_USED=tf.float32
 
 class DenseLayer:
     def __init__(self, input, size, relu=False, bias=True, weight_normalization=False,
@@ -31,7 +32,7 @@ class DenseLayer:
         with tf.variable_scope("dense_layer_{}".format(layernum)):
             self.w_ = tf.get_variable(name="weights_matrix",
                                 shape=[nin_, size],
-                                initializer=tf.contrib.layers.xavier_initializer(dtype=tf.float32, uniform=False),
+                                initializer=tf.contrib.layers.xavier_initializer(dtype=DTYPE_USED, uniform=False),
                                 # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/weights_matrix:0"),
                                 trainable=True)  # weight matrix
             self.nbparams += int(nin_ * size)
@@ -40,7 +41,7 @@ class DenseLayer:
                 self.weightnormed = True
                 self.g = tf.get_variable(shape=[size],
                                     name="weight_normalization_g",
-                                    initializer=tf.constant_initializer(value=1.0, dtype="float32"),
+                                    initializer=tf.constant_initializer(value=1.0, dtype=DTYPE_USED),
                                     # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/weight_normalization_g:0"),
                                     trainable=True)
                 self.nbparams += int(size)
@@ -58,7 +59,7 @@ class DenseLayer:
             if bias:
                 self.bias = True
                 self.b = tf.get_variable(shape=[size],
-                                         initializer=tf.constant_initializer(value=0.0, dtype="float32"),
+                                         initializer=tf.constant_initializer(value=0.0, dtype=DTYPE_USED),
                                          # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/bias:0"),
                                          name="bias",
                                          trainable=True)
