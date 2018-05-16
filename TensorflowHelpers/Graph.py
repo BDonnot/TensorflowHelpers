@@ -3,6 +3,7 @@ import pdb
 import tensorflow as tf
 
 from .ANN import NNFully
+from .ANN import DTYPE_USED
 
 class ExpGraphOneXOneY:
     def __init__(self, data, var_x_name="input", var_y_name="output", nnType=NNFully, argsNN=(), kwargsNN={},
@@ -169,7 +170,7 @@ class ExpGraph(ExpGraphOneXOneY):
         self.true_dataY = {k : self.data[k] for k in self.outputname}
 
         # 1. build the input layer
-        # self.input = tf.zeros(shape=(None, 0), dtype=tf.float32)
+        # self.input = tf.zeros(shape=(None, 0), dtype=DTYPE_USED)
         self.dimin = {}  # to memorize which data goes where
         prev = 0
         tup = tuple()
@@ -308,7 +309,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.encoders = {}
         self._buildencoders(sizes, spec_encoding, encDecNN, args_enc, kwargs_enc)
 
-        # self.input = tf.zeros(shape=(None, 0), dtype=tf.float32)
+        # self.input = tf.zeros(shape=(None, 0), dtype=DTYPE_USED)
         tup = tuple()
         for el in sorted(self.inputname):
             tup += (self.outputEnc[el],)
@@ -487,22 +488,22 @@ class ComplexGraph(ExpGraphOneXOneY):
             pdb.set_trace()
 
     def _build_latent_space_addnoise(self, latent_dim_size, latent_hidden_layers, latent_keep_prob):
-        self.amount_vae_ph = tf.placeholder(dtype=tf.float32, shape=(), name="skip_conn")
-        self.amount_vae = tf.Variable(tf.zeros(shape=self.amount_vae_ph.get_shape(), dtype=tf.float32), trainable=False)
+        self.amount_vae_ph = tf.placeholder(dtype=DTYPE_USED, shape=(), name="skip_conn")
+        self.amount_vae = tf.Variable(tf.zeros(shape=self.amount_vae_ph.get_shape(), dtype=DTYPE_USED), trainable=False)
         self.assign_vae = tf.assign(self.amount_vae, self.amount_vae_ph, name="assign_vae")
 
         # to activate / deactivate the encoder part of the VAE (deactivate it during predicitons)
-        self.use_vae_enc_ph = tf.placeholder(dtype=tf.float32, shape=(), name="use_vae_pred")
+        self.use_vae_enc_ph = tf.placeholder(dtype=DTYPE_USED, shape=(), name="use_vae_pred")
         # use_vae_pred is set to 1 during training and 0 when making forecast
         # it deactivated the input of the VAE, making proper predictions
-        self.use_vae_enc = tf.Variable(tf.zeros(shape=self.use_vae_enc_ph.get_shape(), dtype=tf.float32), trainable=False)
+        self.use_vae_enc = tf.Variable(tf.zeros(shape=self.use_vae_enc_ph.get_shape(), dtype=DTYPE_USED), trainable=False)
         self.assign_use_vae_enc = tf.assign(self.use_vae_enc, self.use_vae_enc_ph, name="assign_use_vae_enc")
 
         with tf.variable_scope("ComplexGraph_variational"):
             # sample a N(0,1) same shape as log std
             self.epsilon = tf.random_normal(tf.shape(self.nn.pred), name='epsilon')
-            self.kld = tf.constant(0.)
-            self.sqrt_dim_size = tf.constant(1.0)
+            self.kld = tf.constant(0., dtype=DTYPE_USED)
+            self.sqrt_dim_size = tf.constant(1.0, dtype=DTYPE_USED)
 
             self.output_vae = (1.-self.amount_vae)*self.nn.pred + self.amount_vae*self.epsilon
 
@@ -516,16 +517,16 @@ class ComplexGraph(ExpGraphOneXOneY):
                 true_values = self.true_dataY[var] - nn_prediction
 
                 # amount of vae i want to have as input (usefull when learning)
-                self.amount_vae_ph = tf.placeholder(dtype=tf.float32, shape=(), name="skip_conn")
-                self.amount_vae = tf.Variable(tf.zeros(shape=self.amount_vae_ph.get_shape(), dtype=tf.float32),
+                self.amount_vae_ph = tf.placeholder(dtype=DTYPE_USED, shape=(), name="skip_conn")
+                self.amount_vae = tf.Variable(tf.zeros(shape=self.amount_vae_ph.get_shape(), dtype=DTYPE_USED),
                                               trainable=False)
                 self.assign_vae = tf.assign(self.amount_vae, self.amount_vae_ph, name="assign_vae")
 
                 # to activate / deactivate the encoder part of the VAE (deactivate it during predicitons)
-                self.use_vae_enc_ph = tf.placeholder(dtype=tf.float32, shape=(), name="use_vae_pred")
+                self.use_vae_enc_ph = tf.placeholder(dtype=DTYPE_USED, shape=(), name="use_vae_pred")
                 # use_vae_pred is set to 1 during training and 0 when making forecast
                 # it deactivated the input of the VAE, making proper predictions
-                self.use_vae_enc = tf.Variable(tf.zeros(shape=self.use_vae_enc_ph.get_shape(), dtype=tf.float32),
+                self.use_vae_enc = tf.Variable(tf.zeros(shape=self.use_vae_enc_ph.get_shape(), dtype=DTYPE_USED),
                                                trainable=False)
                 self.assign_use_vae_enc = tf.assign(self.use_vae_enc, self.use_vae_enc_ph, name="assign_use_vae_enc")
 
@@ -602,16 +603,16 @@ class ComplexGraph(ExpGraphOneXOneY):
         with tf.variable_scope("ComplexGraph_variational"):
             with tf.variable_scope("ComplexGraph_variational_fexibility"):
                 # must be made between nn.pred and its output is an input of the decodeur
-                self.amount_vae_ph = tf.placeholder(dtype=tf.float32, shape=(), name="skip_conn")
-                self.amount_vae = tf.Variable(tf.zeros(shape=self.amount_vae_ph.get_shape(), dtype=tf.float32),
+                self.amount_vae_ph = tf.placeholder(dtype=DTYPE_USED, shape=(), name="skip_conn")
+                self.amount_vae = tf.Variable(tf.zeros(shape=self.amount_vae_ph.get_shape(), dtype=DTYPE_USED),
                                               trainable=False)
                 self.assign_vae = tf.assign(self.amount_vae, self.amount_vae_ph, name="assign_vae")
 
                 # to activate / deactivate the encoder part of the VAE (deactivate it during predicitons)
-                self.use_vae_enc_ph = tf.placeholder(dtype=tf.float32, shape=(), name="use_vae_pred")
+                self.use_vae_enc_ph = tf.placeholder(dtype=DTYPE_USED, shape=(), name="use_vae_pred")
                 # use_vae_pred is set to 1 during training and 0 when making forecast
                 # it deactivated the input of the VAE, making proper predictions
-                self.use_vae_enc = tf.Variable(tf.zeros(shape=self.use_vae_enc_ph.get_shape(), dtype=tf.float32),
+                self.use_vae_enc = tf.Variable(tf.zeros(shape=self.use_vae_enc_ph.get_shape(), dtype=DTYPE_USED),
                                                trainable=False)
                 self.assign_use_vae_enc = tf.assign(self.use_vae_enc, self.use_vae_enc_ph, name="assign_use_vae_enc")
 
@@ -675,7 +676,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.loss = loss
         if self._have_latent_space():
             var_latent = "y"
-            self.loss[var_latent] = tf.add(loss, 1/self.sqrt_dim_size*self.kld)
+            self.loss[var_latent] = tf.add(loss, 1/self.sqrt_dim_size*self.kld) # TODO check with half precision if this is working
             loss = self.loss
         return loss
 

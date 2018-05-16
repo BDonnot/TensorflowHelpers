@@ -20,7 +20,7 @@ except ImportError:
 
 import tensorflow as tf
 
-from .ANN import NNFully
+from .ANN import DTYPE_USED
 from .DataHandler import ExpData
 from .Graph import ExpGraphOneXOneY
 from .Losses import l2
@@ -231,7 +231,7 @@ class ExpLogger:
                 self.params.save_loss == 0):
             computed = True
             # compute error on training set and validation set (mandatory)
-            error_nan, loss_ = data.computetensorboard(
+            _, loss_ = data.computetensorboard(
                 sess=sess, writers=self, graph=graph, xval=global_step, minibatchnum=minibatchnum)
             # compute error on the other datasets
             for savername in self.otherinfo:
@@ -485,6 +485,8 @@ class ExpModel:
         with tf.variable_scope("training_loss"):
             self.losses = {k: self.lossfun(self.inference[k], true_output_dict[k], name="training_loss_{}".format(k)) \
                            for k in self.inference.keys()}
+            if DTYPE_USED != tf.float32:
+                self.losses = {k: tf.cast(v, tf.float32) for k, v in self.losses.items()}
             self.loss = tf.constant(0., dtype=tf.float32)
             for _, l in self.losses.items():
                 # TODO capability of having ponderated loss!
@@ -493,8 +495,11 @@ class ExpModel:
         # pdb.set_trace()
         self.optimize=None
         with tf.variable_scope("optimizer"):
-            self.optimize = optimizerClass(
-                **optimizerkwargs).minimize(loss=self.loss, name="optimizer")
+            self.optimizer = optimizerClass(**optimizerkwargs)
+            # self.optimize = self.optimizer.minimize(loss=self.loss, name="optimizer")
+            self.grads_and_vars = self.optimizer.compute_gradients(self.loss)
+            self.capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in self.grads_and_vars]
+            self.optimize = self.optimizer.apply_gradients(self.capped_gvs)
 
         # 3. build the summaries that will be stored
         with tf.variable_scope("summaries"):
@@ -565,6 +570,7 @@ class ExpModel:
         # 1. train the model
         # TODO optim: make in one pass optimizer and storing minibatch info if
         # any
+        # pdb.set_trace()
         beg__ = datetime.datetime.now()
         self.graph.run(sess, toberun=self.optimize)
         end__ = datetime.datetime.now()
@@ -975,7 +981,6 @@ class Exp:
             self.graph.initwn(self.sess)
         # pdb.set_trace()
         self.is_initialized = True
-
 
     def start(self):  # TODO log beginning, and graph restoring
         """

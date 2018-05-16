@@ -4,7 +4,7 @@ import pdb
 import numpy as np
 import tensorflow as tf
 
-DTYPE_USED=tf.float32
+DTYPE_USED = tf.float16
 
 class DenseLayer:
     def __init__(self, input, size, relu=False, bias=True, weight_normalization=False,
@@ -31,22 +31,29 @@ class DenseLayer:
         self.res = None
         with tf.variable_scope("dense_layer_{}".format(layernum)):
             self.w_ = tf.get_variable(name="weights_matrix",
-                                shape=[nin_, size],
-                                initializer=tf.contrib.layers.xavier_initializer(dtype=DTYPE_USED, uniform=False),
-                                # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/weights_matrix:0"),
-                                trainable=True)  # weight matrix
+                                      shape=[nin_, size],
+                                      initializer=tf.contrib.layers.xavier_initializer(dtype=tf.float32, uniform=False),
+                                      # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/weights_matrix:0"),
+                                      trainable=True,
+                                      dtype=tf.float32)  # weight matrix
+            if DTYPE_USED != tf.float32:
+                self.w_ = tf.cast(self.w_, DTYPE_USED)
+
             self.nbparams += int(nin_ * size)
 
             if weight_normalization:
                 self.weightnormed = True
                 self.g = tf.get_variable(shape=[size],
-                                    name="weight_normalization_g",
-                                    initializer=tf.constant_initializer(value=1.0, dtype=DTYPE_USED),
-                                    # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/weight_normalization_g:0"),
-                                    trainable=True)
+                                         name="weight_normalization_g",
+                                         initializer=tf.constant_initializer(value=1.0, dtype=tf.float32),
+                                         # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/weight_normalization_g:0"),
+                                    trainable=True,
+                                      dtype=tf.float32)
+                if DTYPE_USED != tf.float32:
+                    self.g = tf.cast(self.g, DTYPE_USED)
                 self.nbparams += int(size)
                 self.scaled_matrix = tf.nn.l2_normalize(self.w_, dim=0, name="weight_normalization_scaled_matrix")
-                self.flops += size*(2*nin_-1) # clomputation of ||v|| (size comptuation of inner product of vector of size nin_)
+                self.flops += size*(2*nin_-1)  # clomputation of ||v|| (size comptuation of inner product of vector of size nin_)
                 self.flops += 2*nin_-1  # division by ||v|| (matrix vector product)
                 self.w = tf.multiply(self.scaled_matrix, self.g, name="weight_normalization_weights")
                 self.flops += 2*nin_-1  # multiplication by g (matrix vector product)
@@ -59,10 +66,13 @@ class DenseLayer:
             if bias:
                 self.bias = True
                 self.b = tf.get_variable(shape=[size],
-                                         initializer=tf.constant_initializer(value=0.0, dtype=DTYPE_USED),
+                                         initializer=tf.constant_initializer(value=0.0, dtype=tf.float32),
                                          # initializer=tf.get_default_graph().get_tensor_by_name(tf.get_variable_scope().name+"/bias:0"),
                                          name="bias",
-                                         trainable=True)
+                                         trainable=True,
+                                         dtype=tf.float32)
+                if DTYPE_USED != tf.float32:
+                    self.b = tf.cast(self.b, DTYPE_USED)
                 self.nbparams += int(size)
                 self.res_ = tf.add(self.res_, self.b, name="adding_bias")
                 self.flops += size # vectors addition of size "size"
@@ -306,12 +316,12 @@ class NNFully:
         if kwardslayer is a dcitionnary, the same "kwardslayer" will be used for alllayer. If you want specific
         "kwardslayer" per layer, use a list of the same size of "layersizes"
         """
-
         self.params_added = 0
         self.flop_added = 0
         name = name+"_" if name is not None else ""
         # TODO if outputsize != input.get_shape()[1] ?
         # TODO remove that for standard network without residual or dense block !!!
+        # pdb.set_trace()
         if resizeinput:
             if outputsize != input.get_shape()[1]:
                 # scaling the input linearly to have the proper size,

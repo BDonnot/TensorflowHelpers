@@ -9,6 +9,7 @@ import tensorflow as tf
 
 from .ANN import DTYPE_USED
 
+DTYPE_NPY = np.float16 if DTYPE_USED == tf.float16 else np.float32
 # TODO READER: make them behave equally well, for now only TFRecordReader can preprocess for example
 # TODO: READERS: correct the but when encountering nan's or infinite value in all reader classes
 # TODO: have a better implementation of preprocessing function
@@ -22,14 +23,14 @@ class ExpDataReader:
         :param batch_size: number of data to read each time the iterator is called
         """
         self.dataX = np.zeros(
-            (0, 0), dtype=np.float32)  # main data set (eg the training set)
+            (0, 0), dtype=DTYPE_NPY)  # main data set (eg the training set)
         # main data set (eg the training set)
-        self.dataY = np.zeros((0, 0), dtype= np.float16 if DTYPE_USED == tf.float16 else np.float32 )
+        self.dataY = np.zeros((0, 0), dtype=DTYPE_NPY)
         self.dataset = tf.data.Dataset.from_tensor_slices(
             (self.dataX, self.dataY))
 
-        self.ms = {"input": tf.constant(0.), "output": tf.constant(0.)}
-        self.sds = {"input": tf.constant(1.), "output": tf.constant(1.)}
+        self.ms = {"input": tf.constant(0., dtype=DTYPE_USED), "output": tf.constant(0., dtype=DTYPE_USED)}
+        self.sds = {"input": tf.constant(1., dtype=DTYPE_USED), "output": tf.constant(1., dtype=DTYPE_USED)}
 
     def nrowsX(self):
         """
@@ -104,8 +105,8 @@ class ExpCSVDataReader(ExpDataReader):
         sds_ = {}
         for k in ms__.keys():
             if k in donnotcenter:
-                ms_[k] = np.zeros(ms__[k].shape)
-                sds_[k] = np.ones(sds__[k].shape)
+                ms_[k] = np.zeros(ms__[k].shape, dtype=DTYPE_NPY)
+                sds_[k] = np.ones(sds__[k].shape, dtype=DTYPE_NPY)
             else:
                 ms_[k] = ms__[k]
                 sds_[k] = sds__[k]
@@ -189,6 +190,8 @@ class ExpCSVDataReader(ExpDataReader):
         m = acc
         std = np.sqrt(acc2 - acc * acc)
         std[std <= 1e-3] = 1.
+        m = {k:v.astype(DTYPE_NPY) for k, v in m}
+        std = {k:v.astype(DTYPE_NPY) for k, v in std}
         return m, std, count
 
     def _countlines(self, path, sizes, fns):
@@ -212,8 +215,8 @@ class ExpCSVDataReader(ExpDataReader):
                     raise RuntimeError(error_str.format(fns[key], prev_files, path))
             nrows = nrows_tmp
             prev_files.add(fns[key])
-        ms = {k: np.zeros(v) for k, v in sizes.items()}
-        sds = {k: np.ones(v) for k, v in sizes.items()}
+        ms = {k: np.zeros(v, dtype=DTYPE_NPY) for k, v in sizes.items()}
+        sds = {k: np.ones(v, dtype=DTYPE_NPY) for k, v in sizes.items()}
         return ms, sds, nrows
 
     def _countlines_aux(self, path, fn):
@@ -242,10 +245,9 @@ class ExpCSVDataReader(ExpDataReader):
         """
         # TODO make a cleaner version of preprocessing!
         record_defaults = [[0.0] for _ in range(size)]
-        row = tf.decode_csv(
-            csv_row,
-            record_defaults=record_defaults,
-            field_delim=";")
+        row = tf.decode_csv(csv_row,
+                            record_defaults=record_defaults,
+                            field_delim=";")
         row = row - m
         row = row / std
         return row
@@ -317,8 +319,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
         sds_ = {}
         for k in ms__.keys():
             if k in donnotcenter:
-                ms_[k] = np.zeros(ms__[k].shape)
-                sds_[k] = np.ones(sds__[k].shape)
+                ms_[k] = np.zeros(ms__[k].shape, dtype=DTYPE_NPY)
+                sds_[k] = np.ones(sds__[k].shape, dtype=DTYPE_NPY)
             else:
                 ms_[k] = ms__[k]
                 sds_[k] = sds__[k]
@@ -350,8 +352,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
         :param fn: the file names
         :return: the number of lines of the files (must iterate through it line by line) 
         """
-        ms = {el: np.zeros(1) for el in sizes}
-        sds = {el: np.ones(1) for el in sizes}
+        ms = {el: np.zeros(1, dtype=DTYPE_NPY) for el in sizes}
+        sds = {el: np.ones(1, dtype=DTYPE_NPY) for el in sizes}
         nb_total = 0
         for fn_ in [os.path.join(path, el) for el in fn]:
             nb = 0
@@ -374,6 +376,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
         parsed_features = tf.parse_single_example(example_proto, self.features)
         # TODO faster if I batch first! (use tf.pase_example instead)
         for k in sizes.keys():
+            parsed_features[k] = tf.cast(parsed_features[k], dtype=DTYPE_USED)
             parsed_features[k] = self.funs_preprocess[k](parsed_features[k])
             parsed_features[k] = parsed_features[k] - ms[k]
             parsed_features[k] = parsed_features[k]/stds[k]
@@ -391,12 +394,12 @@ class ExpTFrecordsDataReader(ExpDataReader):
         :return: the mean, the standard deviation, and the number of rows
         """
 
-        acc = { k:np.zeros(shape = (v)) for k,v in sizes.items() }
-        acc2 = { k:np.zeros(shape = (v)) for k,v in sizes.items() }
+        acc = { k:np.zeros(shape=(v), dtype=np.float64) for k,v in sizes.items() }
+        acc2 = { k:np.zeros(shape=(v), dtype=np.float64) for k,v in sizes.items() }
         msg_displayed = {k:0 for k,_ in sizes.items()}
         with tf.variable_scope("datareader_compute_means_vars"):
-            ms = {k:tf.constant(0.0, name="fake_means") for k,_ in sizes.items()}
-            sds = {k:tf.constant(1.0, name="fake_stds") for k,_ in sizes.items()}
+            ms = {k:tf.constant(0.0, name="fake_means", dtype=DTYPE_USED) for k,_ in sizes.items()}
+            sds = {k:tf.constant(1.0, name="fake_stds", dtype=DTYPE_USED) for k,_ in sizes.items()}
             dataset = tf.data.TFRecordDataset(
                 [os.path.join(path, el) for el in fn]).map(
                 lambda line: self._parse_function(example_proto=line, sizes=sizes, ms=ms, stds=sds),
@@ -404,7 +407,6 @@ class ExpTFrecordsDataReader(ExpDataReader):
             ).prefetch(self.num_thread * 5).batch(self.num_thread).repeat(1)
             iterator = dataset.make_one_shot_iterator()
             parsed_features = iterator.get_next(name="fake_iterator")
-
             # I need a session to parse the features
             config = tf.ConfigProto()
             config.gpu_options.allow_growth = True
@@ -418,7 +420,7 @@ class ExpTFrecordsDataReader(ExpDataReader):
                         # print(np.sum(np.abs(pf["conso_X"])))
                         # pdb.set_trace()
                         for k in sizes.keys():
-                            vect = pf[k]
+                            vect = pf[k].astype(np.float64)
                             if np.any(~np.isfinite(vect)):
                                 if msg_displayed[k] == 0:
                                     msg = "W Datareader : there are infinite or nan values in the dataset named {}"
@@ -450,6 +452,9 @@ class ExpTFrecordsDataReader(ExpDataReader):
             stds = {k: np.sqrt(acc2[k] - v * v) for k,v in acc.items()}
             for k,v in stds.items():
                 stds[k][stds[k] <= 1e-3] = 1.0
+
+            ms = {k: v.astype(DTYPE_NPY) for k, v in ms.items()}
+            stds = {k: v.astype(DTYPE_NPY) for k, v in stds.items()}
         return ms, stds, count
 
     def _nrows(self, array):
@@ -571,7 +576,6 @@ class ExpData:
                                                         **values["kwargsdata"]
                                                         )
             self.otheriterator_init[otherdsname] = self.iterator.make_initializer(self.otherdatasets[otherdsname].dataset)
-
     def _load_npy_means_stds(self, classData):
         """
         If the means and variance have already been computed, it will load them from the hard drive
@@ -599,14 +603,15 @@ class ExpData:
                     m = np.load(os.path.join(self.path_exp, self.means_vars_directory, "ms-{}.npy".format(k)))
                     s = np.load(os.path.join(self.path_exp, self.means_vars_directory, "sds-{}.npy".format(k)))
                     if k in self.donnotcenter:
-                        m = np.zeros(m.shape)
-                        s = np.ones(s.shape)
+                        m = np.zeros(m.shape, dtype=DTYPE_NPY)
+                        s = np.ones(s.shape, dtype=DTYPE_NPY)
                     ms[k] = m
                     sds[k] = s
                 # pdb.set_trace()
                 if classData.ms_tensor:
                     ms = self._shape_properly(ms, name="means")
                     sds = self._shape_properly(sds, name="stds")
+
                 return ms, sds
 
     def _shape_properly(self, ms, name):
@@ -754,8 +759,8 @@ class ExpData:
             initop = self.otheriterator_init[dataset_name]
         size_dataset = dataset.nrowsX()
         # pdb.set_trace()
-        res = {k: np.zeros(shape=(size_dataset, int(self.ms[k].shape[0]))) for k in varsname}
-        orig = {k: np.zeros(shape=(size_dataset, int(self.ms[k].shape[0]))) for k in varsname}
+        res = {k: np.zeros(shape=(size_dataset, int(self.ms[k].shape[0])), dtype=DTYPE_NPY) for k in varsname}
+        orig = {k: np.zeros(shape=(size_dataset, int(self.ms[k].shape[0])), dtype=DTYPE_NPY) for k in varsname}
         sess.run(initop)
         previous = 0
         while True:
@@ -898,14 +903,14 @@ class ExpNpyDataReader(ExpDataReader):
             ms_ = {k: np.mean(v, axis=0) for k,v in self.datasets.items()}
             self.ms = {k: v for k,v in ms_ if not k in donnotcenter}
             for el in donnotcenter:
-                self.ms[el] = np.zeros(ms_[el].shape)
+                self.ms[el] = np.zeros(ms_[el].shape, dtype=DTYPE_NPY)
         else:
             self.ms = ms
         if sds is None:
             sds_ = {k: np.std(v, axis=0) for k,v in self.datasets.items()}
             self.sds = {k: v for k,v in sds_ if not k in donnotcenter}
             for el in donnotcenter:
-                self.sds[el] = np.ones(sds_[el].shape)
+                self.sds[el] = np.ones(sds_[el].shape, dtype=DTYPE_NPY)
         else:
             self.sds = sds
 
@@ -925,6 +930,7 @@ class ExpNpyDataReader(ExpDataReader):
         self.dataset = tf.data.Dataset.from_generator(generator=self.generator,
                                                       output_types={k: v.dtype for k, v in self.features.items()},
                                                       output_shapes={k: v.shape for k, v in self.features.items()})
+        pdb.set_trace()
         if train:
             self.dataset = self.dataset.repeat(-1)
             # self.dataset = self.dataset.shuffle(buffer_size=10000)
