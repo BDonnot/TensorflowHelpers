@@ -483,8 +483,11 @@ class ExpModel:
         self.loss = None
 
         with tf.variable_scope("training_loss"):
-            if DTYPE_USED != tf.float32:
-                self.losses = {k: tf.cast(v, tf.float32) for k, v in self.losses.items()}
+            if DTYPE_USED == tf.float32:
+                self.losses = {k: self.lossfun(self.inference[k],
+                                               true_output_dict[k],
+                                               name="training_loss_{}".format(k)) \
+                               for k in self.inference.keys()}
             else:
                 self.losses = {k: self.lossfun(tf.cast(self.inference[k], tf.float32),
                                                tf.cast(true_output_dict[k], tf.float32),
