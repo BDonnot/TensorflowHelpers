@@ -267,7 +267,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
                  num_thread=4,
                  ms=None, sds=None,
                  fun_preprocess=None,
-                 add_noise={}):
+                 add_noise={},
+                 dtypes={}):
         """
         ms (and sds) should be None or dictionnaries with at least the keys in vars, and tensorflow float32 tensors as values
         
@@ -289,7 +290,11 @@ class ExpTFrecordsDataReader(ExpDataReader):
         self.sizes = sizes
         self.num_thread = num_thread
         self.batch_size = batch_size
-        self.features = {k: tf.FixedLenFeature((val,), tf.float32, default_value=[0.0 for _ in range(val)])
+        self.dtypes = dtypes
+        # pdb.set_trace()
+        self.features = {k: tf.FixedLenFeature((val,), tf.float32 if k not in dtypes else dtypes[k]
+                                               # ,default_value=[0.0 for _ in range(val)]
+                                               )
                     for k, val in sizes.items()}
         self.funs_preprocess = {k: tf.identity for k in sizes.keys()}
         if fun_preprocess is not None:
@@ -376,8 +381,8 @@ class ExpTFrecordsDataReader(ExpDataReader):
         parsed_features = tf.parse_single_example(example_proto, self.features)
         # TODO faster if I batch first! (use tf.pase_example instead)
         for k in sizes.keys():
-            parsed_features[k] = tf.cast(parsed_features[k], dtype=DTYPE_USED)
             parsed_features[k] = self.funs_preprocess[k](parsed_features[k])
+            parsed_features[k] = tf.cast(parsed_features[k], dtype=DTYPE_USED)
             parsed_features[k] = parsed_features[k] - ms[k]
             parsed_features[k] = parsed_features[k]/stds[k]
         return parsed_features
@@ -396,10 +401,10 @@ class ExpTFrecordsDataReader(ExpDataReader):
 
         acc = { k:np.zeros(shape=(v), dtype=np.float64) for k,v in sizes.items() }
         acc2 = { k:np.zeros(shape=(v), dtype=np.float64) for k,v in sizes.items() }
-        msg_displayed = {k:0 for k,_ in sizes.items()}
+        msg_displayed = {k: 0 for k, _ in sizes.items()}
         with tf.variable_scope("datareader_compute_means_vars"):
-            ms = {k:tf.constant(0.0, name="fake_means", dtype=DTYPE_USED) for k,_ in sizes.items()}
-            sds = {k:tf.constant(1.0, name="fake_stds", dtype=DTYPE_USED) for k,_ in sizes.items()}
+            ms = {k: tf.constant(0.0, name="fake_means", dtype=DTYPE_USED) for k,_ in sizes.items()}
+            sds = {k: tf.constant(1.0, name="fake_stds", dtype=DTYPE_USED) for k,_ in sizes.items()}
             dataset = tf.data.TFRecordDataset(
                 [os.path.join(path, el) for el in fn]).map(
                 lambda line: self._parse_function(example_proto=line, sizes=sizes, ms=ms, stds=sds),
@@ -474,7 +479,8 @@ class ExpData:
                  argsVdata=(), kwargsVdata={},
                     otherdsinfo = {},
                  donnotcenter={},
-                 fun_preprocess=None
+                 fun_preprocess=None,
+                 dtypes={}
                  ):
         """ The base class for every 'data' subclasses, depending on the problem
         :param batch_size: the size of the minibatch
@@ -503,7 +509,7 @@ class ExpData:
         if fun_preprocess is not None:
             for varname, fun in fun_preprocess.items():
                 self.funs_preprocess[varname]= fun
-        fun_preprocess = {k: v[0] for k,v in self.funs_preprocess.items()}
+        fun_preprocess = {k: v[0] for k, v in self.funs_preprocess.items()}
         # pdb.set_trace()
         # the data for training (fitting the models parameters)
         self.trainingData = classData(*argsTdata,
@@ -515,6 +521,7 @@ class ExpData:
                                       ms=ms,
                                       sds=sds,
                                       fun_preprocess=fun_preprocess,
+                                      dtypes=dtypes,
                                       **kwargsTdata)
         # get the values of means and standard deviation of the training set,
         # to be use in the others sets
@@ -532,6 +539,7 @@ class ExpData:
                                    ms=self.ms,
                                    sds=self.sds,
                                    fun_preprocess=fun_preprocess,
+                                      dtypes=dtypes,
                                    **kwargsTdata)
         # the data for validation set (fitting the models hyper parameters --
         # only used when reporting error on the whole set)
@@ -544,6 +552,7 @@ class ExpData:
                                  ms=self.ms,
                                  sds=self.sds,
                                  fun_preprocess=fun_preprocess,
+                                      dtypes=dtypes,
                                  **kwargsVdata)
         self.sizemax = sizemax # size maximum of a "minibatch" eg the maximum number of examples that will be fed
         # at once for making a single forward computation
@@ -573,6 +582,7 @@ class ExpData:
                                                         ms=self.ms,
                                                         sds=self.sds,
                                                         fun_preprocess=fun_preprocess,
+                                      dtypes=dtypes,
                                                         **values["kwargsdata"]
                                                         )
             self.otheriterator_init[otherdsname] = self.iterator.make_initializer(self.otherdatasets[otherdsname].dataset)
