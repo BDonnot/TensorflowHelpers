@@ -14,3 +14,27 @@ from .Losses import l2, rmse, pinball, pinball_multi_q, sigmoid_cross_entropy_wi
 
 from .Emulator import EmulLog
 
+def isok_arg(arg, argname=""):
+    """
+    Test if argument is "True" or "False", with improve compatibility for "t"/"f", "T"/"F", "1"/"0"
+    :param arg:
+    :param argname:
+    :return:
+    """
+    if isinstance(arg, type(True)):
+        return arg
+    if isinstance(arg, type("")):
+        arg = arg.strip("\"")
+
+    res = False
+    if arg == "True" or arg == "T" or arg == "true" or arg == "t" or str(arg) == "1":
+        res = True
+    elif arg == "False" or arg == "F" or arg == "false" or arg == "f" or str(arg) == "0":
+        res = False
+    else:
+        msg = "You enter a argument {} which should be a boolean."
+        msg += " Please check argument named \"{}\""
+        msg += " and change its value to \"True\" or \"False\""
+        raise RuntimeError(msg.format(arg, argname))
+    return res
+
