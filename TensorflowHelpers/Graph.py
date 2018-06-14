@@ -2,7 +2,7 @@ import pdb
 
 import tensorflow as tf
 
-from .ANN import NNFully
+from .ANN import NNFully, DenseLayer
 from .ANN import DTYPE_USED
 
 class ExpGraphOneXOneY:
@@ -167,7 +167,7 @@ class ExpGraph(ExpGraphOneXOneY):
         self.data = data
 
         # dictionnary of "ground truth" data
-        self.true_dataY = {k : self.data[k] for k in self.outputname}
+        self.true_dataY = {k: self.data[k] for k in self.outputname}
 
         # 1. build the input layer
         # self.input = tf.zeros(shape=(None, 0), dtype=DTYPE_USED)
@@ -244,6 +244,8 @@ class ComplexGraph(ExpGraphOneXOneY):
                  args_dec=(), kwargs_dec={},
                  kwargs_enc_dec=None,
                  spec_encoding={},
+                 resize_nn=None,
+
                  has_vae=False,
                  latent_dim_size=None,
                  latent_hidden_layers=(),
@@ -279,7 +281,9 @@ class ComplexGraph(ExpGraphOneXOneY):
         :param kwargs_enc_dec: 
         :param sizes: the size output by the encoder for each input variable. Dictionnary with key: variable names, value: size
         :param outputsize: the output size for the intermediate / main neural network
-        :param has_vae: do you want to add a variationnal auto encoder (between the output of the intermediate neural network and the decoders) 
+        :param resize_nn : the number of unit of all the intermediate layers
+
+        :param has_vae: do you want to add a variationnal auto encoder (between the output of the intermediate neural network and the decoders)
         :param latent_dim_size: the size of the latent space (int)
         :param latent_hidden_layers: the number of hidden layers of the latent space (ordered iterable of integer)
         :param latent_keep_prob: keep probability for regular dropout for the building of the latent space (affect only the mean)
@@ -297,6 +301,48 @@ class ComplexGraph(ExpGraphOneXOneY):
             kwargs_enc = kwargs_enc_dec
             kwargs_dec = kwargs_enc_dec
 
+        if kwargs_enc is None:
+            """
+            In this case, there will not be any encoders, all the input data will be concatenated
+            """
+            # 1. build the input layer
+            # self.input = tf.zeros(shape=(None, 0), dtype=DTYPE_USED)
+            self.dimin = {}  # to memorize which data goes where
+            self.has_enc = False
+            prev = 0
+            tup = tuple()
+            for el in sorted(self.inputname):
+                if el in spec_encoding:
+                    tup += (spec_encoding[el](self.data[el]),)
+                else:
+                    tup += (self.data[el],)
+                this_size = int(tup[-1].get_shape()[1])
+                self.dimin[el] = (prev, prev + this_size)
+                prev += this_size
+            self.input = tf.concat(tup, axis=1, name="input_concatenantion")
+        else:
+            self.dimin = None
+            self.has_enc = True
+
+        if kwargs_enc is None:
+            """
+            In this case, there will not be any decoders, all the output data will be concatenated
+            """
+            # 2. build the output layer
+            self.dimout = {}  # to memorize which data goes where
+            self.has_dec = False
+            prev = 0
+            tup = tuple()
+            for el in sorted(self.outputname):
+                tup += (self.data[el],)
+                this_size = int(self.data[el].get_shape()[1])
+                self.dimout[el] = (prev, prev + this_size)
+                prev += this_size
+            self.output = tf.concat(tup, axis=1, name="output_concatenantion")
+        else:
+            self.dimout = None
+            self.has_dec = True
+
         # dictionnary of "ground truth" data
         self.true_dataY = {k: self.data[k] for k in self.outputname}
         self.true_dataX = {k: self.data[k] for k in self.inputname}
@@ -307,17 +353,33 @@ class ComplexGraph(ExpGraphOneXOneY):
         # 1. build the encodings neural networks
         self.outputEnc = {}
         self.encoders = {}
-        self._buildencoders(sizes, spec_encoding, encDecNN, args_enc, kwargs_enc)
+        if self.has_enc:
+            self._buildencoders(sizes, spec_encoding, encDecNN, args_enc, kwargs_enc)
 
-        # self.input = tf.zeros(shape=(None, 0), dtype=DTYPE_USED)
-        tup = tuple()
-        for el in sorted(self.inputname):
-            tup += (self.outputEnc[el],)
-        self.enc_output = tf.concat(tup, axis=1, name="encoder_output_concatenantion")
+            # self.input = tf.zeros(shape=(None, 0), dtype=DTYPE_USED)
+            tup = tuple()
+            for el in sorted(self.inputname):
+                tup += (self.outputEnc[el],)
+            self.enc_output_raw = tf.concat(tup, axis=1, name="encoder_output_concatenantion")
+        else:
+            self.enc_output_raw = self.input
+
+
 
         # 3. build the neural network
         self.nn = None
-        self._buildintermediateNN(nnType=nnType, argsNN=argsNN, input=self.enc_output, outputsize=outputsize, kwargsNN=kwargsNN)
+        if resize_nn is not None:
+            self.resize_layer = DenseLayer(input=self.enc_output_raw, size=resize_nn,
+                                           relu=False, bias=False,
+                                           weight_normalization=False,
+                                           keep_prob=None, layernum="resizing_layer")
+            self.enc_output = self.resize_layer.res
+        else:
+            self.resize_layer = None
+            self.enc_output = self.enc_output_raw
+
+        self._buildintermediateNN(nnType=nnType, argsNN=argsNN,
+                                  input=self.enc_output, outputsize=outputsize, kwargsNN=kwargsNN)
 
         # 4. add a variational component if needed
         inputdec = None
@@ -336,7 +398,13 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.outputDec = {}
         self.decoders = {}
         self.size_out = 0
-        self._builddecoders(encDecNN, args_dec, kwargs_dec, inputdec=inputdec)
+        if self.has_dec:
+            self._builddecoders(encDecNN, args_dec, kwargs_dec, inputdec=inputdec)
+        else:
+            self.outputDec = {}  # dictionnary of output of the NN
+            for varn in sorted(self.outputname):
+                be, en = self.dimout[varn]
+                self.outputDec[varn] = self.nn.pred[:, be:en]
 
         # 6. build structure to retrieve the right information from the concatenated one's
         self.vars_out = self.outputDec  # dictionnary of output of the NN
@@ -394,7 +462,7 @@ class ComplexGraph(ExpGraphOneXOneY):
     def getnbparam(self):
         """
         :return:  the number of total free parameters of the neural network"""
-        res = 0
+        res = self.resize_layer.nbparams if self.resize_layer is not None else 0
         for _,v in self.encoders.items():
             res += v.getnbparam()
         res += self.nn.getnbparam()
@@ -409,7 +477,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         Results are given for a minibatch of 1 example for a single forward pass.
         :return: the number of flops of the neural network build 
         """
-        res = 0
+        res = self.resize_layer.flops if self.resize_layer is not None else 0
         for _,v in self.encoders.items():
             res += v.getflop()
         res += self.nn.getflop()
@@ -484,7 +552,8 @@ class ComplexGraph(ExpGraphOneXOneY):
                              input=input,
                              outputsize=outputsize,
                              **kwargsNN)
-        except:
+        except Exception as except_:
+            print(except_)
             pdb.set_trace()
 
     def _build_latent_space_addnoise(self, latent_dim_size, latent_hidden_layers, latent_keep_prob):
