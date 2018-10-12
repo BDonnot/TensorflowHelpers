@@ -2,6 +2,7 @@
 import tensorflow as tf
 
 from .ANN import DTYPE_USED
+import pdb
 
 def l2(pred, true, name="loss_l2"):
     return tf.nn.l2_loss(pred-true, name=name)

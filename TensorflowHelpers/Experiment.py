@@ -502,10 +502,11 @@ class ExpModel:
         self.optimize=None
         with tf.variable_scope("optimizer"):
             self.optimizer = optimizerClass(**optimizerkwargs)
-            # self.optimize = self.optimizer.minimize(loss=self.loss, name="optimizer")
-            self.grads_and_vars = self.optimizer.compute_gradients(self.loss)
-            self.capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in self.grads_and_vars]
-            self.optimize = self.optimizer.apply_gradients(self.capped_gvs)
+            self.optimize = self.optimizer.minimize(loss=self.loss, name="optimizer")
+
+            # self.grads_and_vars = self.optimizer.compute_gradients(self.loss)
+            # self.capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in self.grads_and_vars]
+            # self.optimize = self.optimizer.apply_gradients(self.capped_gvs)
 
         # 3. build the summaries that will be stored
         with tf.variable_scope("summaries"):
