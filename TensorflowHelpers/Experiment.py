@@ -528,10 +528,10 @@ class ExpModel:
                     self.l_max[k] = tf.reduce_max(self.error_abs[k],  name="{}_{}_l_max".format(netname, k))
 
                     # add loss as a summary for training
-                    sum0 = tf.summary.scalar(netname + "loss_{}_{}".format(netname, k), self.losses[k])
-                    sum1 = tf.summary.scalar(netname + "l1_avg_{}_{}".format(netname, k), self.l1_avg[k])
-                    sum2 = tf.summary.scalar(netname + "l2_avg_{}_{}".format(netname, k), self.l2_avg[k])
-                    sum3 = tf.summary.scalar(netname + "loss_max_{}_{}".format(netname, k), self.l_max[k])
+                    sum0 = tf.summary.scalar(netname + "loss_{}_{}".format(netname, k), tf.reduce_mean(self.losses[k]))
+                    sum1 = tf.summary.scalar(netname + "l1_avg_{}_{}".format(netname, k), tf.reduce_mean(self.l1_avg[k]))
+                    sum2 = tf.summary.scalar(netname + "l2_avg_{}_{}".format(netname, k), tf.reduce_mean(self.l2_avg[k]))
+                    sum3 = tf.summary.scalar(netname + "loss_max_{}_{}".format(netname, k), tf.reduce_mean(self.l_max[k]))
 
                     li_summaries += [sum0, sum1, sum2, sum3]
 
