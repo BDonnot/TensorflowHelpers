@@ -888,10 +888,11 @@ class ExpData:
 class ExpNpyDataReader(ExpDataReader):
     ms_tensor = False # is the "self.ms" (or "self.sds") a tensor (True) or a numpy array (False)
     def __init__(self, train, batch_size, pathdata=".",
-                 filenames={"input": "X.npy" , "output": ("Y.npy",)},
+                 filename={"input": "X.npy" , "output": ("Y.npy",)},
                  sizes={"input":1, "output":1},
                  num_thread=4, donnotcenter={},
                  fun_preprocess=lambda x: x,
+                 dtypes={},
                  ms=None, sds=None):
         """
         
@@ -907,18 +908,19 @@ class ExpNpyDataReader(ExpDataReader):
         """
         self.train = train
         mmap_mode = None if train else "c"  # "c" stand for: data are kept on the hard drive, but can be modified in memory
-        self.datasets = {k: np.load(os.path.join(pathdata, v), mmap_mode=mmap_mode) for k, v in filenames.items()}
+        self.datasets = {k: np.load(os.path.join(pathdata, v), mmap_mode=mmap_mode) for k, v in filename.items()}
+        self.datasets = {k: v.astype(DTYPE_NPY) for k,v in self.datasets.items() }
         # pdb.set_trace()
         if ms is None:
             ms_ = {k: np.mean(v, axis=0) for k,v in self.datasets.items()}
-            self.ms = {k: v for k,v in ms_ if not k in donnotcenter}
+            self.ms = {k: v for k,v in ms_.items() if not k in donnotcenter}
             for el in donnotcenter:
                 self.ms[el] = np.zeros(ms_[el].shape, dtype=DTYPE_NPY)
         else:
             self.ms = ms
         if sds is None:
             sds_ = {k: np.std(v, axis=0) for k,v in self.datasets.items()}
-            self.sds = {k: v for k,v in sds_ if not k in donnotcenter}
+            self.sds = {k: v for k,v in sds_.items() if not k in donnotcenter}
             for el in donnotcenter:
                 self.sds[el] = np.ones(sds_[el].shape, dtype=DTYPE_NPY)
         else:
@@ -928,7 +930,7 @@ class ExpNpyDataReader(ExpDataReader):
         # self.placeholders = {k: tf.placeholder(shape=(None, v), dtype=tf.float32) for k,v in sizes.items()}
 
         self.batch_size = batch_size
-        self.nrows = self.datasets[next(iter(filenames.keys()))].shape[0]
+        self.nrows = self.datasets[next(iter(filename.keys()))].shape[0]
         self.indexDataMinibatch = list(range(self.nrows))
         if self.train:
             random.shuffle(self.indexDataMinibatch)
@@ -940,7 +942,7 @@ class ExpNpyDataReader(ExpDataReader):
         self.dataset = tf.data.Dataset.from_generator(generator=self.generator,
                                                       output_types={k: v.dtype for k, v in self.features.items()},
                                                       output_shapes={k: v.shape for k, v in self.features.items()})
-        pdb.set_trace()
+        # pdb.set_trace()
         if train:
             self.dataset = self.dataset.repeat(-1)
             # self.dataset = self.dataset.shuffle(buffer_size=10000)
