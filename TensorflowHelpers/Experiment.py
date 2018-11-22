@@ -497,6 +497,7 @@ class ExpModel:
             for _, l in self.losses.items():
                 # TODO capability of having ponderated loss!
                 self.loss = self.loss + l
+            self.loss = tf.reduce_mean(self.loss) # loss averaged accross minibatch examples
             self.loss = self.graph.init_loss(self.loss)
         # pdb.set_trace()
         self.optimize=None
