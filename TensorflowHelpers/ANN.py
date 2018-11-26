@@ -7,6 +7,8 @@ import tensorflow as tf
 DTYPE_USED = tf.float16 # doesn't work atm
 DTYPE_USED = tf.float32
 
+DTYPE_NPY = np.float16 if DTYPE_USED == tf.float16 else np.float32
+
 class DenseLayer:
     def __init__(self, input, size, relu=False, bias=True, weight_normalization=False,
                  keep_prob=None, layernum=0):

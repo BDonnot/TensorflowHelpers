@@ -658,14 +658,14 @@ class ExpModel:
         """
 
         #TODO for now getpred takes a lot of RAM, maybe it is not necessary and it can be optimized
-        predicted, orig = self.data.getpred(sess=sess, graph=self.graph, varsname=self.graph.outputname)
+        predicted, orig = self.graph.getpred(sess=sess, graph=self.graph, varsname=self.graph.outputname)
         if self.explogger.logger is not None:
             self.explogger.logger.info("_______________________________")
             self.explogger.logger.info("Computing error for \"{}\" dataset".format("validation"))
         for varname in orig.keys():
             self.logfinalerror(varname, pred=predicted[varname], true=orig[varname], dict_summary=dict_summary)
         for dsn, ds in self.data.otherdatasets.items():
-            predicted, orig = self.data.getpred(sess=sess, graph=self.graph,
+            predicted, orig = self.graph.getpred(sess=sess, graph=self.graph,
                                                 varsname=self.graph.outputname, dataset_name=dsn)
             if self.explogger.logger is not None:
                 self.explogger.logger.info("_______________________________")
@@ -1145,7 +1145,7 @@ class Exp:
                 dict_saved[key] = val
             json.dump(dict_saved, f, sort_keys=True, indent=4)
 
-    def getpred(self, dsname=None, includeinput=False):
+    def getpred(self, dsname=None, includeinput=False, **kwargs):
         """
         :param dsnam: the name of the dataset you want to get the error from (none=validation dataset)
         :param includeinput: include the "prediction" for input data also
@@ -1155,7 +1155,7 @@ class Exp:
         varname = self.graph.outputname
         if includeinput:
             varname = varname | self.graph.inputname
-        return self.data.getpred(self.sess, self.graph, varname, dataset_name=dsname)
+        return self.graph.getpred(self.sess, self.graph, varname, dataset_name=dsname, **kwargs)
 
     def __enter__(self):
         # kill and delete the previous session (unused, but just to be sure)

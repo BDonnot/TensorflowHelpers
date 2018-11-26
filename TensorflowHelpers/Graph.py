@@ -1,9 +1,10 @@
 import pdb
+import numpy as np
 
 import tensorflow as tf
 
 from .ANN import NNFully, DenseLayer
-from .ANN import DTYPE_USED
+from .ANN import DTYPE_USED, DTYPE_NPY
 
 class ExpGraphOneXOneY:
     def __init__(self, data, var_x_name="input", var_y_name="output", nnType=NNFully, argsNN=(), kwargsNN={},
@@ -110,19 +111,6 @@ class ExpGraphOneXOneY:
         """
         return int(self.data[self.outputname[0]].shape[1])
 
-    def run_with_feeddict(self, sess, toberun, data=None):
-        """
-        Use the tensorflow session 'sess' to run the graph node 'toberun' with data 'data'
-        :param sess: a tensorflow session
-        :param toberun: a node in the tensorflow computation graph to be run...
-        :param data: the data set to be used.
-        :return:
-        """
-        fd = {}
-        for id, el in self.phs:  # TODO Here !!!
-            fd[el] = data[id]
-        return sess.run(toberun, feed_dict=fd)
-
     def startexp(self, sess):
         """
         TODO documentation
@@ -137,6 +125,80 @@ class ExpGraphOneXOneY:
         :return: 
         """
         pass
+
+    def _select_proper_dataset(self, sess, dataset_name=None, **kwargs):
+        """
+        Initialize properly the dataset used for accessing the data
+        :param sess: a tensorflow session
+        :param dataset_name: name of the dataset
+        :return:
+        """
+        if dataset_name is None or dataset_name == "val" or dataset_name=="Val":
+            dataset, initop = self.data.activate_val_set()
+        elif dataset_name == "Train" or dataset_name == "train":
+            # dataset = self.trainData
+            # initop = self.train_init_op
+            dataset, initop = self.data.activate_trainining_set_sameorder()
+        else:
+            # dataset = self.otherdatasets[dataset_name]
+            # initop = self.otheriterator_init[dataset_name]
+            dataset, initop = self.data.activate_dataset(dataset_name)
+        sess.run(initop)
+        return dataset, initop
+
+    def _restore_proper_dataset(self, sess, dataset_name=None, **kwargs):
+        pass
+
+    def getpred(self, sess, graph, varsname, dataset_name=None, **kwargs):
+        """
+        :param sess: a tensorflow session
+        :param graph: an object of class 'ExpGraph' or one of its derivatives
+        :param the variable for which you want to do the comptuation
+        :return: the prediction for the validation test (rescaled, and "un preprocessed" (eg directly comparable to the original data) )
+        :return: the original data
+        :return: the predictions takes the form of a dictionnary k: name, value: value predicted
+        :param dataset_name: on which dataset you want to compute it. If not none, the proper initialization operator must be called beforehand
+        """
+        #TODO why is it in data ?
+
+        dataset, initop = self._select_proper_dataset(sess, dataset_name, **kwargs)
+        size_dataset = dataset.nrowsX()
+        # pdb.set_trace()
+        res = {k: np.zeros(shape=(size_dataset, int(self.data.ms[k].shape[0])), dtype=DTYPE_NPY) for k in varsname}
+        orig = {k: np.zeros(shape=(size_dataset, int(self.data.ms[k].shape[0])), dtype=DTYPE_NPY) for k in varsname}
+        previous = 0
+        while True:
+            try:
+                preds = graph.run(sess, toberun=[graph.vars_out, self.data.true_data])
+                size = 0
+                for k in res.keys():
+                    # getting the prediction
+                    if k in preds[0]:
+                        # this is an output variable, it is computed from the graph
+                        tmp = preds[0][k]
+                    else:
+                        # k is an input variable, no chance to have it from the graph output!
+                        tmp = preds[1][k]
+                    size = tmp.shape[0]
+                    max_range = min(previous+size, size_dataset)
+
+                    # rescale it ("un preprossed it")
+                    tmp = self.data.funs_preprocess[k][1](tmp * self.data.sds[k] + self.data.ms[k])
+                    # storing it in res
+                    res[k][previous:max_range, :] = tmp
+
+                    tmp = preds[1][k]
+                    # rescale it ("un preprossed it")
+                    tmp = self.data.funs_preprocess[k][1](tmp * self.data.sds[k] + self.data.ms[k])
+                    # storing it in res
+                    orig[k][previous:max_range, :] = tmp
+                previous += size
+            except tf.errors.OutOfRangeError:
+                break
+        _, training_init_op = self.data.activate_trainining_set()
+        sess.run(training_init_op)
+        self._restore_proper_dataset(sess, dataset_name, **kwargs)
+        return res, orig
 
 class ExpGraph(ExpGraphOneXOneY):
     def __init__(self, data, var_x_name={"input"}, var_y_name={"output"}, nnType=NNFully, argsNN=(), kwargsNN={},

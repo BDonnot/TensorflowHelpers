@@ -7,9 +7,8 @@ import pdb
 import numpy as np
 import tensorflow as tf
 
-from .ANN import DTYPE_USED
+from .ANN import DTYPE_USED, DTYPE_NPY
 
-DTYPE_NPY = np.float16 if DTYPE_USED == tf.float16 else np.float32
 # TODO READER: make them behave equally well, for now only TFRecordReader can preprocess for example
 # TODO: READERS: correct the but when encountering nan's or infinite value in all reader classes
 # TODO: have a better implementation of preprocessing function
@@ -586,6 +585,27 @@ class ExpData:
                                                         **values["kwargsdata"]
                                                         )
             self.otheriterator_init[otherdsname] = self.iterator.make_initializer(self.otherdatasets[otherdsname].dataset)
+
+    def activate_val_set(self):
+        dataset = self.valData
+        initop = self.validation_init_op
+        return dataset, initop
+
+    def activate_trainining_set(self):
+        dataset = self.trainingData
+        initop = self.trainingData
+        return dataset, initop
+
+    def activate_dataset(self, dataset_name):
+        dataset = self.otherdatasets[dataset_name]
+        initop = self.otheriterator_init[dataset_name]
+        return dataset, initop
+
+    def activate_trainining_set_sameorder(self):
+        dataset = self.trainData
+        initop = self.train_init_op
+        return dataset, initop
+
     def _load_npy_means_stds(self, classData):
         """
         If the means and variance have already been computed, it will load them from the hard drive
@@ -746,64 +766,6 @@ class ExpData:
             "{} l2 error after {} minibatches : {}".format(
                 name, minibatchnum, acc_loss))
         return error_nan, acc_loss
-
-    def getpred(self, sess, graph, varsname, dataset_name=None):
-        """
-        :param sess: a tensorflow session
-        :param graph: an object of class 'ExpGraph' or one of its derivatives
-        :param the variable for which you want to do the comptuation
-        :return: the prediction for the validation test (rescaled, and "un preprocessed" (eg directly comparable to the original data) ) 
-        :return: the original data
-        :return: the predictions takes the form of a dictionnary k: name, value: value predicted
-        :param dataset_name: on which dataset you want to compute it. If not none, the proper initialization operator must be called beforehand
-        """
-        #TODO why is it in data ?
-        if dataset_name is None or dataset_name == "val" or dataset_name=="Val":
-            dataset = self.valData
-            initop = self.validation_init_op
-        elif dataset_name == "Train" or dataset_name == "train":
-            dataset = self.trainData
-            initop = self.train_init_op
-        else:
-            dataset = self.otherdatasets[dataset_name]
-            initop = self.otheriterator_init[dataset_name]
-        size_dataset = dataset.nrowsX()
-        # pdb.set_trace()
-        res = {k: np.zeros(shape=(size_dataset, int(self.ms[k].shape[0])), dtype=DTYPE_NPY) for k in varsname}
-        orig = {k: np.zeros(shape=(size_dataset, int(self.ms[k].shape[0])), dtype=DTYPE_NPY) for k in varsname}
-        sess.run(initop)
-        previous = 0
-        while True:
-            try:
-                preds = graph.run(sess, toberun=[graph.vars_out, self.true_data])
-                size = 0
-                for k in res.keys():
-                    # getting the prediction
-                    if k in preds[0]:
-                        # this is an output variable, it is computed from the graph
-                        tmp = preds[0][k]
-                    else:
-                        # k is an input variable, no chance to have it from the graph output!
-                        tmp = preds[1][k]
-                    size = tmp.shape[0]
-                    max_range = min(previous+size, size_dataset)
-
-                    # rescale it ("un preprossed it")
-                    tmp = self.funs_preprocess[k][1](tmp * self.sds[k] + self.ms[k])
-                    # storing it in res
-                    res[k][previous:max_range, :] = tmp
-
-                    tmp = preds[1][k]
-                    # rescale it ("un preprossed it")
-                    tmp = self.funs_preprocess[k][1](tmp * self.sds[k] + self.ms[k])
-                    # storing it in res
-                    orig[k][previous:max_range, :] = tmp
-                previous += size
-            except tf.errors.OutOfRangeError:
-                break
-
-        sess.run(self.training_init_op)
-        return res, orig
 
     def combinerescompute(self, res, curr, toberun, indx=None):
         """
