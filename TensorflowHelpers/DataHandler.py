@@ -593,7 +593,7 @@ class ExpData:
 
     def activate_trainining_set(self):
         dataset = self.trainingData
-        initop = self.trainingData
+        initop = self.training_init_op
         return dataset, initop
 
     def activate_dataset(self, dataset_name):

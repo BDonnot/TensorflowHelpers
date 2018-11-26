@@ -126,7 +126,7 @@ class ExpGraphOneXOneY:
         """
         pass
 
-    def _select_proper_dataset(self, sess, dataset_name=None, **kwargs):
+    def _select_proper_dataset(self, sess, data, dataset_name=None, **kwargs):
         """
         Initialize properly the dataset used for accessing the data
         :param sess: a tensorflow session
@@ -134,22 +134,22 @@ class ExpGraphOneXOneY:
         :return:
         """
         if dataset_name is None or dataset_name == "val" or dataset_name=="Val":
-            dataset, initop = self.data.activate_val_set()
+            dataset, initop = data.activate_val_set()
         elif dataset_name == "Train" or dataset_name == "train":
             # dataset = self.trainData
             # initop = self.train_init_op
-            dataset, initop = self.data.activate_trainining_set_sameorder()
+            dataset, initop = data.activate_trainining_set_sameorder()
         else:
             # dataset = self.otherdatasets[dataset_name]
             # initop = self.otheriterator_init[dataset_name]
-            dataset, initop = self.data.activate_dataset(dataset_name)
+            dataset, initop = data.activate_dataset(dataset_name)
         sess.run(initop)
         return dataset, initop
 
-    def _restore_proper_dataset(self, sess, dataset_name=None, **kwargs):
+    def _restore_proper_dataset(self, sess, data, dataset_name=None, **kwargs):
         pass
 
-    def getpred(self, sess, graph, varsname, dataset_name=None, **kwargs):
+    def getpred(self, sess, graph, varsname, data, dataset_name=None, **kwargs):
         """
         :param sess: a tensorflow session
         :param graph: an object of class 'ExpGraph' or one of its derivatives
@@ -161,15 +161,15 @@ class ExpGraphOneXOneY:
         """
         #TODO why is it in data ?
 
-        dataset, initop = self._select_proper_dataset(sess, dataset_name, **kwargs)
+        dataset, initop = self._select_proper_dataset(sess, data, dataset_name, **kwargs)
         size_dataset = dataset.nrowsX()
         # pdb.set_trace()
-        res = {k: np.zeros(shape=(size_dataset, int(self.data.ms[k].shape[0])), dtype=DTYPE_NPY) for k in varsname}
-        orig = {k: np.zeros(shape=(size_dataset, int(self.data.ms[k].shape[0])), dtype=DTYPE_NPY) for k in varsname}
+        res = {k: np.zeros(shape=(size_dataset, int(data.ms[k].shape[0])), dtype=DTYPE_NPY) for k in varsname}
+        orig = {k: np.zeros(shape=(size_dataset, int(data.ms[k].shape[0])), dtype=DTYPE_NPY) for k in varsname}
         previous = 0
         while True:
             try:
-                preds = graph.run(sess, toberun=[graph.vars_out, self.data.true_data])
+                preds = graph.run(sess, toberun=[graph.vars_out, data.true_data])
                 size = 0
                 for k in res.keys():
                     # getting the prediction
@@ -183,19 +183,19 @@ class ExpGraphOneXOneY:
                     max_range = min(previous+size, size_dataset)
 
                     # rescale it ("un preprossed it")
-                    tmp = self.data.funs_preprocess[k][1](tmp * self.data.sds[k] + self.data.ms[k])
+                    tmp = data.funs_preprocess[k][1](tmp * data.sds[k] + data.ms[k])
                     # storing it in res
                     res[k][previous:max_range, :] = tmp
 
                     tmp = preds[1][k]
                     # rescale it ("un preprossed it")
-                    tmp = self.data.funs_preprocess[k][1](tmp * self.data.sds[k] + self.data.ms[k])
+                    tmp = data.funs_preprocess[k][1](tmp * data.sds[k] + data.ms[k])
                     # storing it in res
                     orig[k][previous:max_range, :] = tmp
                 previous += size
             except tf.errors.OutOfRangeError:
                 break
-        _, training_init_op = self.data.activate_trainining_set()
+        _, training_init_op = data.activate_trainining_set()
         sess.run(training_init_op)
         self._restore_proper_dataset(sess, dataset_name, **kwargs)
         return res, orig

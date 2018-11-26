@@ -658,7 +658,7 @@ class ExpModel:
         """
 
         #TODO for now getpred takes a lot of RAM, maybe it is not necessary and it can be optimized
-        predicted, orig = self.graph.getpred(sess=sess, graph=self.graph, varsname=self.graph.outputname)
+        predicted, orig = self.graph.getpred(sess=sess, graph=self.graph, varsname=self.graph.outputname, data=self.data)
         if self.explogger.logger is not None:
             self.explogger.logger.info("_______________________________")
             self.explogger.logger.info("Computing error for \"{}\" dataset".format("validation"))
@@ -666,7 +666,7 @@ class ExpModel:
             self.logfinalerror(varname, pred=predicted[varname], true=orig[varname], dict_summary=dict_summary)
         for dsn, ds in self.data.otherdatasets.items():
             predicted, orig = self.graph.getpred(sess=sess, graph=self.graph,
-                                                varsname=self.graph.outputname, dataset_name=dsn)
+                                                varsname=self.graph.outputname, dataset_name=dsn, data=self.data)
             if self.explogger.logger is not None:
                 self.explogger.logger.info("_______________________________")
                 self.explogger.logger.info("Computing error for \"{}\" dataset".format(dsn))
@@ -1155,7 +1155,7 @@ class Exp:
         varname = self.graph.outputname
         if includeinput:
             varname = varname | self.graph.inputname
-        return self.graph.getpred(self.sess, self.graph, varname, dataset_name=dsname, **kwargs)
+        return self.graph.getpred(self.sess, self.graph, varname, data=self.data, dataset_name=dsname, **kwargs)
 
     def __enter__(self):
         # kill and delete the previous session (unused, but just to be sure)
