@@ -169,6 +169,7 @@ class ExpGraphOneXOneY:
         previous = 0
         while True:
             try:
+                # pdb.set_trace()
                 preds = graph.run(sess, toberun=[graph.vars_out, data.true_data])
                 size = 0
                 for k in res.keys():
