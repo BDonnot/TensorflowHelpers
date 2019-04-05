@@ -523,7 +523,7 @@ class ExpData:
                                       fun_preprocess=fun_preprocess,
                                       dtypes=dtypes,
                                       **kwargsTdata)
-        self.sizes = sizes
+        self.sizes = self.trainingData.sizes
         # get the values of means and standard deviation of the training set,
         # to be use in the others sets
         self.ms = self.trainingData.ms
@@ -534,7 +534,7 @@ class ExpData:
         self.trainData = classData(*argsTdata,
                                    donnotcenter=donnotcenter,
                                    pathdata=pathdata,
-                                   sizes=sizes,
+                                   sizes=self.sizes,
                                    train=False,
                                    batch_size=sizemax,
                                    ms=self.ms,
@@ -547,7 +547,7 @@ class ExpData:
         self.valData = classData(*argsVdata,
                                  donnotcenter=donnotcenter,
                                  pathdata=pathdata,
-                                 sizes=sizes,
+                                 sizes=self.sizes,
                                  train=False,
                                  batch_size=sizemax,
                                  ms=self.ms,
@@ -577,7 +577,7 @@ class ExpData:
         for otherdsname, values in otherdsinfo.items():
             self.otherdatasets[otherdsname] = classData(*values["argsdata"],
                                                         pathdata=pathdata,
-                                                        sizes=sizes,
+                                                        sizes=self.sizes,
                                                         train=False,
                                                         batch_size=sizemax,
                                                         ms=self.ms,
@@ -876,7 +876,7 @@ class ExpInMemoryDataReader(ExpDataReader):
         :param sds: 
         """
         self.train = train
-
+        self.filename = filename
         if numpy_:
             mmap_mode = None if train else "c"  # "c" stand for: data are kept on the hard drive, but can be modified in memory
             self.datasets = {k: np.load(os.path.join(pathdata, v), mmap_mode=mmap_mode) for k, v in filename.items()}
@@ -887,8 +887,14 @@ class ExpInMemoryDataReader(ExpDataReader):
             raise RuntimeError("For now only panda dataframe and numpy array are supported in ")
 
         self.datasets = {k: v.astype(DTYPE_NPY) for k, v in self.datasets.items() }
-        sizes = {k: el.shape[1] for k, el in self.datasets.items()}
-        self.sizes = sizes
+
+        if self.train:
+            sizes = {k: el.shape[1] for k, el in self.datasets.items()}
+            self.sizes = sizes
+        else:
+            self.sizes = sizes
+        self._check_validity()
+
         # pdb.set_trace()
         if ms is None:
             ms_ = {k: np.mean(v, axis=0) for k,v in self.datasets.items()}
@@ -930,6 +936,19 @@ class ExpInMemoryDataReader(ExpDataReader):
         self.dataset = self.dataset.batch(batch_size=batch_size)
         # pdb.set_trace()
 
+    def _check_validity(self):
+        nr_ = None
+        for k, v in self.datasets.items():
+            if nr_ is None:
+                nr_ = v.shape[0]
+            else:
+                if v.shape[0] != nr_:
+                    raise RuntimeError("Dataset {} has not the same size as the other. Stopping here.".format(self.filename[k]))
+            if v.shape[0] == 0:
+                raise RuntimeError("Empty dataset file for {}. Stopping there".format(self.filename[k]))
+            if v.shape[1] != self.sizes[k]:
+                raise RuntimeError("Dataset {} has not the same number of columns as specified in the sizes.".format(self.filename[k]))
+
     def generator(self):
         """
         :return: the data of one line of the dataset
@@ -946,7 +965,7 @@ class ExpInMemoryDataReader(ExpDataReader):
         """
         size = 1
         new_epoch = False
-        if self.lastIndexDataMinibatch+size <= self.nrows:
+        if self.lastIndexDataMinibatch+size < self.nrows:
             prev = self.lastIndexDataMinibatch
             self.lastIndexDataMinibatch += size
             res = self.indexDataMinibatch[prev:self.lastIndexDataMinibatch]
@@ -958,6 +977,7 @@ class ExpInMemoryDataReader(ExpDataReader):
                 random.shuffle(self.indexDataMinibatch)
             self.lastIndexDataMinibatch = size-len(res)
             res += self.indexDataMinibatch[:self.lastIndexDataMinibatch]
+            self.lastIndexDataMinibatch = 0
         return new_epoch, res
 
     def init(self, sess):
