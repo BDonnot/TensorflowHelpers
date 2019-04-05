@@ -522,6 +522,7 @@ class ExpData:
                                       fun_preprocess=fun_preprocess,
                                       dtypes=dtypes,
                                       **kwargsTdata)
+        self.sizes = sizes
         # get the values of means and standard deviation of the training set,
         # to be use in the others sets
         self.ms = self.trainingData.ms
@@ -581,7 +582,7 @@ class ExpData:
                                                         ms=self.ms,
                                                         sds=self.sds,
                                                         fun_preprocess=fun_preprocess,
-                                      dtypes=dtypes,
+                                                        dtypes=dtypes,
                                                         **values["kwargsdata"]
                                                         )
             self.otheriterator_init[otherdsname] = self.iterator.make_initializer(self.otherdatasets[otherdsname].dataset)
@@ -886,7 +887,7 @@ class ExpInMemoryDataReader(ExpDataReader):
 
         self.datasets = {k: v.astype(DTYPE_NPY) for k, v in self.datasets.items() }
         sizes = {k: el.shape[1] for k, el in self.datasets.items()}
-
+        self.sizes = sizes
         # pdb.set_trace()
         if ms is None:
             ms_ = {k: np.mean(v, axis=0) for k,v in self.datasets.items()}
