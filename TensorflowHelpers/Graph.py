@@ -299,7 +299,7 @@ class ExpGraph(ExpGraphOneXOneY):
 
 class ComplexGraph(ExpGraphOneXOneY):
     def __init__(self, data,
-                 # outputsize,
+                 outputsize,
                  sizes,
                  var_x_name={"input"}, var_y_name={"output"},
                  nnType=NNFully, argsNN=(), kwargsNN={},
