@@ -847,17 +847,22 @@ class ExpData:
         sess.run(self.training_init_op)
 
 
-class ExpNpyDataReader(ExpDataReader):
+class ExpInMemoryDataReader(ExpDataReader):
     ms_tensor = False # is the "self.ms" (or "self.sds") a tensor (True) or a numpy array (False)
     def __init__(self, train, batch_size, pathdata=".",
                  filename={"input": "X.npy" , "output": ("Y.npy",)},
-                 sizes={"input":1, "output":1},
+                 sizes=None,
                  num_thread=4, donnotcenter={},
                  fun_preprocess=lambda x: x,
                  dtypes={},
-                 ms=None, sds=None):
+                 ms=None, sds=None,
+                 numpy_=True,
+                 panda_=False,
+                 sep=";"):
         """
-        
+        Load data in memory, and then use an iterator to process it.
+        Data can be read from numpy array (numpy_ = True) or from pandas data frame (numpy_ = False, panda_=True).
+        In the later case, dataframe are converted to numpy array
         :param train: 
         :param batch_size: 
         :param pathdata: 
@@ -869,9 +874,19 @@ class ExpNpyDataReader(ExpDataReader):
         :param sds: 
         """
         self.train = train
-        mmap_mode = None if train else "c"  # "c" stand for: data are kept on the hard drive, but can be modified in memory
-        self.datasets = {k: np.load(os.path.join(pathdata, v), mmap_mode=mmap_mode) for k, v in filename.items()}
-        self.datasets = {k: v.astype(DTYPE_NPY) for k,v in self.datasets.items() }
+
+        if numpy_:
+            mmap_mode = None if train else "c"  # "c" stand for: data are kept on the hard drive, but can be modified in memory
+            self.datasets = {k: np.load(os.path.join(pathdata, v), mmap_mode=mmap_mode) for k, v in filename.items()}
+        elif panda_:
+            import pandas as pd
+            self.datasets = {k: pd.read_csv(os.path.join(pathdata, v), sep=sep).values for k, v in filename.items()}
+        else:
+            raise RuntimeError("For now only panda dataframe and numpy array are supported in ")
+
+        self.datasets = {k: v.astype(DTYPE_NPY) for k, v in self.datasets.items() }
+        sizes = {k: el.shape[1] for k, el in self.datasets.items()}
+
         # pdb.set_trace()
         if ms is None:
             ms_ = {k: np.mean(v, axis=0) for k,v in self.datasets.items()}
@@ -957,6 +972,10 @@ class ExpNpyDataReader(ExpDataReader):
         """
         return self.nrows
 
+
+class ExpNpyDataReader(ExpInMemoryDataReader):
+    def __init__(self, args, kwargs):
+        ExpInMemoryDataReader.__init__(self, *args, **kwargs)
 
 if __name__=="__main__":
     test_tf_nb_lines = ExpTFrecordsDataReader(train=True, batch_size=1)

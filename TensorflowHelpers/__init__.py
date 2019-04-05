@@ -1,6 +1,6 @@
 from .ANN import DenseLayer, NNFully, ResidualBlock, DenseBlock, DTYPE_USED
 
-from .DataHandler import ExpDataReader, ExpCSVDataReader, ExpData, ExpTFrecordsDataReader, ExpNpyDataReader  # reading and handling data
+from .DataHandler import ExpDataReader, ExpCSVDataReader, ExpData, ExpTFrecordsDataReader, ExpNpyDataReader, ExpInMemoryDataReader  # reading and handling data
 
 from .Graph import ExpGraphOneXOneY, ExpGraph, ComplexGraph  # the tensorflow "main" comptuation graph
 

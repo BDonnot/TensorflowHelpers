@@ -454,7 +454,9 @@ class ExpModel:
                  lossfun=l2,
                  optimizerClass=tf.train.AdamOptimizer, optimizerkwargs={},
                  netname="",
-                 otherinfo={}):
+                 otherinfo={},
+                 weigth_loss={},
+                 default_lossfun=l2):
         """ init the model with hyper-parameters etc
         add the loss and the optimizer to the pure definition of the neural network.
         The NN is defined by ExpGraphOneXOneY.
@@ -462,12 +464,27 @@ class ExpModel:
         :param exp_params: an object of class ExpParam
         :param data: an object of class ExpData or one of its derivative. The data used for the computation
         :param graph: an object of class ExpGraphOneXOneY or one of its derivative. The NN used for the computation.
-        :param lossfun: the loss function to use
+        :param lossfun: the loss function to use (dictionnary or loss function)
         :param optimizerClass: the class optimizer to use (tf.train.optimizer)
         :param optimizerkwargs: the key-words arguments to build the optimizer. You can pass the learning rate here.
         :param otherinfo: an iterable: the names of all the other dataset for which errors will be computed (for example Test dataset)
+        :param default_lossfun: the loss function to be used by default if nothing is specify in "lossfun"
+        :param weigth_loss: in case your model has multiple output, you can scale the losses of each differently with this parameter
         """
-        self.lossfun = lossfun
+        if not isinstance(lossfun, dict):
+            self.lossfun = {k: lossfun for k,v in graph.getoutput().items()}
+        else:
+            self.lossfun = lossfun
+            for k,v in graph.getoutput().items():
+                if not k in self.lossfun:
+                    print("WARNING: Experiments the output {} is affected to the default loss because you didn't specify it in \"lossfun\"".format(k))
+                    self.lossfun[k] = default_lossfun
+
+        self.weigth_loss = weigth_loss
+        for k, v in graph.getoutput().items():
+            if not k in self.weigth_loss:
+                self.weigth_loss[k] = 1.
+
         self.optimizerClass = optimizerClass
         self.exp_params = exp_params
 
@@ -484,14 +501,17 @@ class ExpModel:
 
         with tf.variable_scope("training_loss"):
             if DTYPE_USED == tf.float32:
-                self.losses = {k: self.lossfun(self.inference[k],
-                                               true_output_dict[k],
-                                               name="training_loss_{}".format(k)) \
+                self.losses = {k: self.lossfun[k](self.inference[k],
+                                                  true_output_dict[k],
+                                                  name="training_loss_{}".format(k),
+                                                  multiplier=self.weigth_loss[k]
+                                                  ) \
                                for k in self.inference.keys()}
             else:
-                self.losses = {k: self.lossfun(tf.cast(self.inference[k], tf.float32),
-                                               tf.cast(true_output_dict[k], tf.float32),
-                                               name="training_loss_{}".format(k)) \
+                self.losses = {k: self.lossfun[k](tf.cast(self.inference[k], tf.float32),
+                                                  tf.cast(true_output_dict[k], tf.float32),
+                                                  name="training_loss_{}".format(k),
+                                                  multiplier=self.weigth_loss[k]) \
                                for k in self.inference.keys()}
             self.loss = tf.constant(0., dtype=tf.float32)
             for _, l in self.losses.items():
@@ -919,7 +939,7 @@ class Exp:
         self.model = modelType(exp_params=self.parameters,
                                 data=self.data,
                                 graph=self.graph,
-                                otherinfo=otherdsinfo.keys(),
+                                otherinfo=otherdsinfo,
                                 *modelargs,
                                 **modelkwargs)
 
