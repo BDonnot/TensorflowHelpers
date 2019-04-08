@@ -1,7 +1,7 @@
 # some usefull losses
 import tensorflow as tf
 
-from .ANN import DTYPE_USED
+from .Layers import DTYPE_USED
 import pdb
 
 def l2(pred, true, name="loss_l2", multiplier=1.):

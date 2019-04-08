@@ -1,4 +1,6 @@
-from .ANN import DenseLayer, NNFully, ResidualBlock, DenseBlock, DTYPE_USED
+from .Layers import DenseLayer, ResidualBlock, DenseBlock, VAEBlock, DTYPE_USED
+
+from .ANN import NNFully
 
 from .DataHandler import ExpDataReader, ExpCSVDataReader, ExpData, ExpTFrecordsDataReader, ExpNpyDataReader, ExpInMemoryDataReader  # reading and handling data
 

@@ -20,7 +20,7 @@ except ImportError:
 
 import tensorflow as tf
 
-from .ANN import DTYPE_USED
+from .Layers import DTYPE_USED
 from .DataHandler import ExpData
 from .Graph import ExpGraphOneXOneY
 from .Losses import l2
@@ -200,6 +200,7 @@ class ExpLogger:
         computed = False
         error_nan = False
         loss_ = np.NaN
+        graph.start_test(sess)
         if forcesaving or (
                 minibatchnum %
                 self.params.save_minibatch_loss == 0):
@@ -238,6 +239,7 @@ class ExpLogger:
                 data.computetensorboard_annex(sess=sess, writers=self, graph=graph, xval=global_step,
                                               minibatchnum=minibatchnum, name=savername)
 
+        graph.start_train(sess)
         return computed, error_nan, loss_
 
     def logtf_with_feeddict(

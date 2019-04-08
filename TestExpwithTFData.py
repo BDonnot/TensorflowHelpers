@@ -3,7 +3,7 @@ import sys
 from TensorflowHelpers.Experiment import ExpData, Exp, ExpSaverParam
 from TensorflowHelpers.Graph import ExpGraphOneXOneY, ExpGraph, ComplexGraph
 from TensorflowHelpers.DataHandler import ExpCSVDataReader, ExpTFrecordsDataReader, ExpNpyDataReader
-from TensorflowHelpers.ANN import ResidualBlock, DenseBlock
+from TensorflowHelpers.Layers import ResidualBlock, DenseBlock
 
 import numpy as np
 import tensorflow as tf

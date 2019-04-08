@@ -1,10 +1,13 @@
 import pdb
-import numpy as np
+import copy
 
+import numpy as np
 import tensorflow as tf
 
-from .ANN import NNFully, DenseLayer
-from .ANN import DTYPE_USED, DTYPE_NPY
+from .Layers import DenseLayer
+from .Layers import DTYPE_USED, DTYPE_NPY
+
+from .ANN import NNFully
 
 class ExpGraphOneXOneY:
     def __init__(self, data, var_x_name="input", var_y_name="output", nnType=NNFully, argsNN=(), kwargsNN={},
@@ -126,6 +129,21 @@ class ExpGraphOneXOneY:
         """
         pass
 
+    def start_train(self, sess):
+        """
+        Inform the model the training process has started
+        :return:
+        """
+        pass
+
+    def start_test(self, sess):
+        """
+        Inform the model the model
+        Deactivate all stochastic stuff
+        :return:
+        """
+        pass
+
     def _select_proper_dataset(self, sess, data, dataset_name=None, **kwargs):
         """
         Initialize properly the dataset used for accessing the data
@@ -169,7 +187,6 @@ class ExpGraphOneXOneY:
         previous = 0
         while True:
             try:
-                # pdb.set_trace()
                 preds = graph.run(sess, toberun=[graph.vars_out, data.true_data])
                 size = 0
                 for k in res.keys():
@@ -312,7 +329,8 @@ class ComplexGraph(ExpGraphOneXOneY):
                  has_vae=False,
                  latent_dim_size=None,
                  latent_hidden_layers=(),
-                 latent_keep_prob=None):
+                 latent_keep_prob=None,
+                 output_nonlin=tf.identity):
         """
         This class can deal with multiple input/output.
         It will first "encode" with a neural network of type "encDecNN" for each input.
@@ -345,6 +363,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         :param sizes: the size output by the encoder for each input variable. Dictionnary with key: variable names, value: size
         :param outputsize: the output size for the intermediate / main neural network
         :param resize_nn : the number of unit of all the intermediate layers
+        :param output_nonlin: non linear activation function of last layer
 
         :param has_vae: do you want to add a variationnal auto encoder (between the output of the intermediate neural network and the decoders)
         :param latent_dim_size: the size of the latent space (int)
@@ -357,6 +376,13 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.inputname = var_x_name
         self.data = data
 
+        if not isinstance(output_nonlin, dict):
+            self.output_nonlin = {k: output_nonlin for k in var_y_name}
+        else:
+            self.output_nonlin = output_nonlin
+            for k in var_y_name:
+                if k not in self.output_nonlin:
+                    self.output_nonlin[k] = tf.identity
 
         if kwargs_enc_dec is not None:
             # TODO make this usage deprecated
@@ -384,10 +410,24 @@ class ComplexGraph(ExpGraphOneXOneY):
                 prev += this_size
             self.input = tf.concat(tup, axis=1, name="input_concatenantion")
         else:
+            if self._detect_if_old_kwargs(kwargs_enc, self.inputname):
+                # I have specified encoding keyword argument by variable, that's good.
+                # I just need to check every input variable has its own arguments.
+                # And add empty dictionnaries when it's not the case
+                for el in self.inputname:
+                    if not el in kwargs_enc:
+                        kwargs_enc[el] = {}
+            else:
+                # the same arguments will be used for all encoders
+                tmp_kwargs_enc = copy.deepcopy(kwargs_enc)
+                kwargs_enc = {}
+                for el in self.inputname:
+                    if not el in kwargs_enc:
+                        kwargs_enc[el] = copy.deepcopy(tmp_kwargs_enc)
             self.dimin = None
             self.has_enc = True
 
-        if kwargs_enc is None:
+        if kwargs_dec is None:
             """
             In this case, there will not be any decoders, all the output data will be concatenated
             """
@@ -403,6 +443,21 @@ class ComplexGraph(ExpGraphOneXOneY):
                 prev += this_size
             self.output = tf.concat(tup, axis=1, name="output_concatenantion")
         else:
+            if self._detect_if_old_kwargs(kwargs_dec, self.outputname):
+                # I have specified encoding keyword argument by variable, that's good.
+                # I just need to check every input variable has its own arguments.
+                # And add empty dictionnaries when it's not the case
+                for el in self.outputname:
+                    if not el in kwargs_dec:
+                        kwargs_dec[el] = {}
+            else:
+                # the same arguments will be used for all encoders
+                tmp_kwargs = copy.deepcopy(kwargs_dec)
+                kwargs_dec = {}
+                for el in self.outputname:
+                    if not el in kwargs_dec:
+                        kwargs_dec[el] = copy.deepcopy(tmp_kwargs)
+
             self.dimout = None
             self.has_dec = True
 
@@ -432,7 +487,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         # 3. build the neural network
         self.nn = None
         if resize_nn is not None:
-            self.resize_layer = DenseLayer(input=self.enc_output_raw, size=resize_nn,
+            self.resize_layer = DenseLayer(input=self.enc_output_raw, size=outputsize,
                                            relu=False, bias=False,
                                            weight_normalization=False,
                                            keep_prob=None, layernum="resizing_layer")
@@ -461,6 +516,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.outputDec = {}
         self.decoders = {}
         self.size_out = 0
+
         if self.has_dec:
             self._builddecoders(encDecNN, args_dec, kwargs_dec, inputdec=inputdec)
         else:
@@ -491,6 +547,13 @@ class ComplexGraph(ExpGraphOneXOneY):
         self.mergedsummaryvar = None
         self.loss = None
 
+    def _detect_if_old_kwargs(self, kwargs, varname):
+        res = False
+        for el in varname:
+            if el in kwargs:
+                res = True
+                return res
+        return res
 
     def initwn(self, sess):
         """
@@ -525,7 +588,7 @@ class ComplexGraph(ExpGraphOneXOneY):
     def getnbparam(self):
         """
         :return:  the number of total free parameters of the neural network"""
-        res = self.resize_layer.nbparams if self.resize_layer is not None else 0
+        res = self.resize_layer.get_nb_params() if self.resize_layer is not None else 0
         for _,v in self.encoders.items():
             res += v.getnbparam()
         res += self.nn.getnbparam()
@@ -540,7 +603,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         Results are given for a minibatch of 1 example for a single forward pass.
         :return: the number of flops of the neural network build 
         """
-        res = self.resize_layer.flops if self.resize_layer is not None else 0
+        res = self.resize_layer.get_nb_flops() if self.resize_layer is not None else 0
         for _,v in self.encoders.items():
             res += v.getflop()
         res += self.nn.getflop()
@@ -567,13 +630,22 @@ class ComplexGraph(ExpGraphOneXOneY):
                         raise RuntimeError(msg.format(varname))
                     size_out = sizes[varname]
                     if varname in spec_encoding:
-                        input_tmp=spec_encoding[varname](self.data[varname])
+                        input_tmp = spec_encoding[varname](self.data[varname])
                     else:
                         input_tmp = self.data[varname]
-                    tmp = encDecNN(*args_enc,
-                                   input=input_tmp,
-                                   outputsize=size_out,
-                                   **kwargs_enc)
+
+                    try:
+                        tmp = encDecNN(*args_enc,
+                                       input=input_tmp,
+                                       outputsize=size_out,
+                                       **kwargs_enc[varname])
+                    except TypeError as e:
+                        msg = "tensorflowHelper.ComplexGraph: impossible to init the encoder. "
+                        msg += "Have you check the class {} accepted all the keys in \"kwargs_enc\" i.e. {}"
+                        print(msg.format(encDecNN, kwargs_enc[varname].keys()))
+                        print(e)
+                        raise e
+
                     self.encoders[varname] = tmp
                     self.outputEnc[varname] = tmp.pred
                     
@@ -592,13 +664,22 @@ class ComplexGraph(ExpGraphOneXOneY):
             for varname in sorted(self.outputname):
                 with tf.variable_scope(varname):
                     # size_out = sizes[varname]
-                    tmp = encDecNN(*args_dec,
-                                   input=inputdec,
-                                   outputsize=int(self.data[varname].get_shape()[1]),
-                                   **kwargs_dec)
+                    try:
+                        tmp = encDecNN(*args_dec,
+                                       input=inputdec,
+                                       outputsize=int(self.data[varname].get_shape()[1]),
+                                       output_nonlin=self.output_nonlin[varname],
+                                       **kwargs_dec[varname])
+                    except TypeError as e:
+                        msg = "tensorflowHelper.ComplexGraph: impossible to init the decoders. "
+                        msg += "Have you check the class {} accepted all the keys in \"kwargs_enc\" i.e. {}"
+                        print(msg.format(encDecNN, kwargs_dec[varname].keys()))
+                        print(e)
+                        raise e
                     self.decoders[varname] = tmp
                     self.outputDec[varname] = tmp.pred
                     self.size_out += int(tmp.pred.get_shape()[1])
+                    print("varname: {}, size: {}".format(varname, int(self.data[varname].get_shape()[1])))
 
     def _buildintermediateNN(self, nnType, argsNN, input, outputsize, kwargsNN):
         """
@@ -810,6 +891,14 @@ class ComplexGraph(ExpGraphOneXOneY):
             var_latent = "y"
             self.loss[var_latent] = tf.add(loss, 1/self.sqrt_dim_size*self.kld) # TODO check with half precision if this is working
             loss = self.loss
+
+        loss = self.resize_layer.add_loss(loss) if self.resize_layer is not None else loss
+        for _, v in self.encoders.items():
+            loss = v.add_loss(loss)
+        loss = self.nn.add_loss(loss)
+        for _, v in self.decoders.items():
+            loss = v.add_loss(loss)
+
         return loss
 
     def init_summary(self, mergedsummaryvar):
@@ -829,6 +918,14 @@ class ComplexGraph(ExpGraphOneXOneY):
         if self.has_vae:
             sess.run([self.assign_vae,self.assign_use_vae_enc],
                      feed_dict={self.amount_vae_ph: 1.0, self.use_vae_enc_ph: 1.0})
+
+        if self.resize_layer is not None:
+            self.resize_layer.startexp(sess)
+        for _, v in self.encoders.items():
+            v.startexp(sess)
+        self.nn.startexp(sess)
+        for _, v in self.decoders.items():
+            v.startexp(sess)
 
     def tell_epoch(self, sess, epochnum):
         """
@@ -851,3 +948,37 @@ class ComplexGraph(ExpGraphOneXOneY):
                 print("use_vae_enc_ph: set to 0")
                 sess.run(self.assign_use_vae_enc,
                          feed_dict={self.use_vae_enc_ph: 0.0})
+        if self.resize_layer:
+            self.resize_layer.tell_epoch(sess, epochnum)
+        for _, v in self.encoders.items():
+            v.tell_epoch(sess, epochnum)
+        self.nn.tell_epoch(sess, epochnum)
+        for _, v in self.decoders.items():
+            v.tell_epoch(sess, epochnum)
+
+    def start_train(self, sess):
+        """
+        Inform the model the training process has started
+        :return:
+        """
+        if self.resize_layer is not None:
+            self.resize_layer.start_train(sess)
+        for _, v in self.encoders.items():
+            v.start_train(sess)
+        self.nn.start_train(sess)
+        for _, v in self.decoders.items():
+            v.start_train(sess)
+
+    def start_test(self, sess):
+        """
+        Inform the model the model
+        Deactivate all stochastic stuff
+        :return:
+        """
+        if self.resize_layer is not None:
+            self.resize_layer.start_test(sess)
+        for _, v in self.encoders.items():
+            v.start_test(sess)
+        self.nn.start_test(sess)
+        for _, v in self.decoders.items():
+            v.start_test(sess)

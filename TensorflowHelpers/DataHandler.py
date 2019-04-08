@@ -7,7 +7,7 @@ import pdb
 import numpy as np
 import tensorflow as tf
 
-from .ANN import DTYPE_USED, DTYPE_NPY
+from .Layers import DTYPE_USED, DTYPE_NPY
 
 # TODO READER: make them behave equally well, for now only TFRecordReader can preprocess for example
 # TODO: READERS: correct the but when encountering nan's or infinite value in all reader classes
@@ -905,6 +905,9 @@ class ExpInMemoryDataReader(ExpDataReader):
             self.ms = ms
         if sds is None:
             sds_ = {k: np.std(v, axis=0) for k,v in self.datasets.items()}
+            for k, v in sds_.items():
+                sds_[k][v <= 1e-3] = 1.0
+
             self.sds = {k: v for k,v in sds_.items() if not k in donnotcenter}
             for el in donnotcenter:
                 self.sds[el] = np.ones(sds_[el].shape, dtype=DTYPE_NPY)
