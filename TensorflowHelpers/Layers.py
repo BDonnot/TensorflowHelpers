@@ -141,11 +141,12 @@ class DenseLayer(Layer):
                 res = self.res_
 
             if keep_prob is not None:
-                res = tf.nn.dropout(self.res, keep_prob=keep_prob, name="applying_dropout")
+                res = tf.nn.dropout(res, rate=1.-keep_prob, name="applying_dropout")
                 # we consider that generating random number count for 1 operation
                 self.flops += size  # generate the "size" real random numbers
                 self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
                 self.flops += size  # element wise multiplication with res
+
             self.res = res
 
     def initwn(self, sess, scale_init=1.0):
@@ -235,7 +236,7 @@ class ResidualBlock(Layer):
 
             if keep_prob is not None:
                 #TODO : copy pasted from DenseLayer
-                tmp = tf.nn.dropout(self.second_layer.get_res(), keep_prob=keep_prob, name="applying_dropout")
+                tmp = tf.nn.dropout(self.second_layer.get_res(), rate=1.-keep_prob, name="applying_dropout")
                 # we consider that generating random number count for 1 operation
                 self.flops += size  # generate the "size" real random numbers
                 self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
@@ -320,7 +321,7 @@ class DenseBlock(Layer):
 
             if keep_prob is not None:
                 #TODO : copy pasted from DenseLayer
-                self.res = tf.nn.dropout(self.res, keep_prob=keep_prob, name="applying_dropout")
+                self.res = tf.nn.dropout(self.res, rate=1.-keep_prob, name="applying_dropout")
                 # we consider that generating random number count for 1 operation
                 self.flops += size  # generate the "size" real random numbers
                 self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
