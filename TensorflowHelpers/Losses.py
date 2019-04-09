@@ -13,7 +13,7 @@ def l2(pred, true, name="loss_l2", multiplier=1.):
     :param multiplier: if you want to multiply it by a scalar
     :return:
     """
-    return multiplier*0.5*tf.reduce_sum((pred-true)*(pred-true), axis=1, name=name)
+    return multiplier*0.5*tf.reduce_mean(tf.reduce_sum((pred-true)*(pred-true), axis=1, name=name))
 
 def rmse(pred, true, name="loss_rmse", multiplier=1.):
     """
@@ -40,7 +40,7 @@ def pinball(pred, true, q, name="loss_pinball", multiplier=1.):
     loss = tf.add(loss, q*tf.cast(tf.greater(pred, true), dtype=DTYPE_USED), name="add_upper_case")
     loss = tf.add(loss, (1.0-q)*tf.cast(tf.less(pred, true), dtype=DTYPE_USED), name="add_lower_case")
     loss = tf.reduce_sum(loss, axis=1, name="sum_var")
-    # loss = tf.reduce_mean(loss, name="mean_examples")
+    loss = tf.reduce_mean(loss, name="mean_examples")
     loss = tf.identity(loss, name=name)
     return multiplier*loss
 
@@ -71,7 +71,7 @@ def sigmoid_cross_entropy_with_logits(pred, true, name="sigmoid_cross_entropy_wi
     :param multiplier: if you want to multiply it by a scalar
     :return:
     """
-    return multiplier*tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(logits=pred, labels=true, name=name))
+    return multiplier*tf.reduce_mean(tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(logits=pred, labels=true, name=name), axis=1))
 
 def softmax_cross_entropy(pred, true, name="sigmoid_cross_entropy_with_logits", multiplier=1.):
     """
@@ -82,6 +82,6 @@ def softmax_cross_entropy(pred, true, name="sigmoid_cross_entropy_with_logits", 
     :param multiplier: if you want to multiply it by a scalar
     :return:
     """
-    loss = tf.reduce_sum(tf.losses.softmax_cross_entropy(logits=pred, onehot_labels=true))
-    loss = tf.identity(loss, name=name)
+    loss = tf.reduce_sum(tf.losses.softmax_cross_entropy(logits=pred, onehot_labels=true), axis=1)
+    loss = tf.identity(tf.reduce_mean(loss), name=name)
     return multiplier*loss
