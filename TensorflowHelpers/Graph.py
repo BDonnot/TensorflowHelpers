@@ -679,7 +679,6 @@ class ComplexGraph(ExpGraphOneXOneY):
                     self.decoders[varname] = tmp
                     self.outputDec[varname] = tmp.pred
                     self.size_out += int(tmp.pred.get_shape()[1])
-                    print("varname: {}, size: {}".format(varname, int(self.data[varname].get_shape()[1])))
 
     def _buildintermediateNN(self, nnType, argsNN, input, outputsize, kwargsNN):
         """

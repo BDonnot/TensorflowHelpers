@@ -201,9 +201,9 @@ class ExpLogger:
         error_nan = False
         loss_ = np.NaN
         graph.start_test(sess)
-        if forcesaving or (
-                minibatchnum %
-                self.params.save_minibatch_loss == 0):
+        log_mn_num = int(np.log(minibatchnum +1))
+        if forcesaving or \
+                (minibatchnum % self.params.save_minibatch_loss == 0) :
             computed = True
             # save the minibatch info during training
             summary, loss_ = graph.run(
@@ -225,11 +225,10 @@ class ExpLogger:
                 # the loss is nan.
                 return computed, True, loss_
 
-        if forcesaving or (
-                self.saveEachEpoch and minibatchnum %
-                self.epochsize == 0) or (
-                minibatchnum %
-                self.params.save_loss == 0):
+        if forcesaving or \
+                (self.saveEachEpoch and minibatchnum % self.epochsize == 0) or \
+                (minibatchnum % self.params.save_loss == 0)or \
+                (log_mn_num % self.params.save_log_loss == 0):
             computed = True
             # compute error on training set and validation set (mandatory)
             _, loss_ = data.computetensorboard(
@@ -242,73 +241,6 @@ class ExpLogger:
         graph.start_train(sess)
         return computed, error_nan, loss_
 
-    def logtf_with_feeddict(
-            self,
-            minibatchnum,
-            graph,
-            data,
-            data_minibatch,
-            sess,
-            forcesaving=False):
-        """
-        Compute the validation set error, and the training set error and the minibatch error, and store them in tensorboard
-        :param minibatchnum: current number of minibatches proccessed
-        :param graph: an object of class 'ExpGraphOneXOneY' or one of its derivatives
-        :param data: an object of class 'ExpData' or one of its derivatives
-        :param data_minibatch: #TODO
-        :param sess: a tensorflow session to execute the code
-        :param forcesaving: do you want to save this data absolutely ?
-        :return:
-        """
-
-        global_step = int(
-            minibatchnum *
-            1. /
-            self.epochsize *
-            self.MAXNUMBATCHPEREPOCH)
-
-        computed = False
-        error_nan = False
-        loss_ = np.NaN
-
-        if forcesaving or (
-                minibatchnum %
-                self.params.save_minibatch_loss == 0):
-            if data_minibatch is None:
-                return computed, error_nan, loss_
-
-            computed = True
-            # save the minibatch info during training
-            summary, loss_ = graph.run(
-                sess, toberun=[
-                    graph.mergedsummaryvar, graph.getloss], data=data_minibatch)
-            self.tfwriter.minibatchwriter.add_summary(summary, global_step)
-
-            if self.filesavenum is not None:
-                self.filesavenum.write(
-                    "{}::{}\n".format(
-                        minibatchnum,
-                        datetime.datetime.now()))
-            self.logger.info(
-                "Last seen l2 error after {} minibatches : {}".format(
-                    minibatchnum, loss_))
-            error_nan = not np.isfinite(loss_)
-            if error_nan:
-                # do not bother to compute training and validation set error if
-                # the loss is nan.
-                return computed, True, loss_
-
-        if forcesaving or (
-                self.saveEachEpoch and minibatchnum %
-                self.epochsize == 0) or (
-                minibatchnum %
-                self.params.save_loss == 0):
-            computed = True
-            error_nan, loss_ = data.computetensorboard(
-                sess=sess, writers=self, graph=graph, xval=global_step, minibatchnum=minibatchnum)
-
-        return computed, error_nan, loss_
-
     def normalize_loss(self, loss, nsample):
         """
         normalize the loss depending on the number of samples
@@ -316,7 +248,7 @@ class ExpLogger:
         :param nsample: the number of samples for which this is computed
         :return: the normalized loss.
         """
-        return loss  # TODO normalize it properly!
+        return loss / nsample  # TODO normalize it properly!
 
     def info(self, str):
         """
@@ -405,8 +337,10 @@ class ExpParam:
         # self.saver = saver
         self.num_savings = num_savings
         self.save_loss = 0
+        self.save_log_loss = 0
         self.num_savings_minibatch = num_savings_minibatch
         self.save_minibatch_loss = 0
+        self.save_logminibatch_loss = 0
         self.num_savings_model = num_savings_model
         self.save_model = 0
         self.epochsize = 0
@@ -437,6 +371,9 @@ class ExpParam:
         self.save_loss = round(self.total_minibatches / self.num_savings)
         if self.save_loss == 0:
             self.save_loss = 1
+        self.save_log_loss = round(np.log(self.total_minibatches) / np.log(self.num_savings))
+        if self.save_log_loss == 0:
+            self.save_log_loss = 1
         self.save_minibatch_loss = round(self.total_minibatches / self.num_savings_minibatch)
         if self.save_minibatch_loss == 0:
             self.save_minibatch_loss = 1
@@ -474,7 +411,7 @@ class ExpModel:
         :param weigth_loss: in case your model has multiple output, you can scale the losses of each differently with this parameter
         """
         if not isinstance(lossfun, dict):
-            self.lossfun = {k: lossfun for k,v in graph.getoutput().items()}
+            self.lossfun = {k: lossfun for k, v in graph.getoutput().items()}
         else:
             self.lossfun = lossfun
             for k,v in graph.getoutput().items():
@@ -507,21 +444,20 @@ class ExpModel:
                                                   true_output_dict[k],
                                                   name="training_loss_{}".format(k),
                                                   multiplier=self.weigth_loss[k]
-                                                  ) \
+                                                  )
                                for k in self.inference.keys()}
             else:
                 self.losses = {k: self.lossfun[k](tf.cast(self.inference[k], tf.float32),
-                                                  tf.cast(true_output_dict[k], tf.float32),
-                                                  name="training_loss_{}".format(k),
-                                                  multiplier=self.weigth_loss[k]) \
+                                    tf.cast(true_output_dict[k], tf.float32),
+                                    name="training_loss_{}".format(k),
+                                    multiplier=self.weigth_loss[k])
                                for k in self.inference.keys()}
             self.loss = tf.constant(0., dtype=tf.float32)
             for _, l in self.losses.items():
-                # TODO capability of having ponderated loss!
                 self.loss = self.loss + l
             self.loss = tf.reduce_mean(self.loss) # loss averaged accross minibatch examples
             self.loss = self.graph.init_loss(self.loss)
-        # pdb.set_trace()
+
         self.optimize=None
         with tf.variable_scope("optimizer"):
             self.optimizer = optimizerClass(**optimizerkwargs)
@@ -539,18 +475,20 @@ class ExpModel:
             self.l1_avg = {}
             self.l2_avg = {}
             self.l_max = {}
+            self.loss_summary = {}
             li_summaries = []
             for var_output_name in self.inference.keys():
                 k = var_output_name
                 with tf.variable_scope("{}".format(var_output_name)):
                     self.error[k] = tf.add(self.inference[k], -true_output_dict[k], name="{}_{}_error_diff".format(netname, k))
                     self.error_abs[k] = tf.abs(self.error[k],  name="{}_{}_error_abs".format(netname, k))
-                    self.l1_avg[k] = tf.reduce_mean( self.error_abs[k],  name="{}_{}_l1_avg".format(netname, k))
+                    self.l1_avg[k] = tf.reduce_mean(self.error_abs[k],  name="{}_{}_l1_avg".format(netname, k))
                     self.l2_avg[k] = tf.reduce_mean(self.error[k] * self.error[k],  name="{}_{}_l2_avg".format(netname, k))
                     self.l_max[k] = tf.reduce_max(self.error_abs[k],  name="{}_{}_l_max".format(netname, k))
+                    self.loss_summary[k] = tf.reduce_mean(self.lossfun[k](self.inference[k], true_output_dict[k], name= "{}_{}_loss".format(netname, k)))
 
                     # add loss as a summary for training
-                    sum0 = tf.summary.scalar(netname + "loss_{}_{}".format(netname, k), tf.reduce_mean(self.losses[k]))
+                    sum0 = tf.summary.scalar(netname + "loss_{}_{}".format(netname, k), tf.reduce_mean(self.loss_summary[k]))
                     sum1 = tf.summary.scalar(netname + "l1_avg_{}_{}".format(netname, k), tf.reduce_mean(self.l1_avg[k]))
                     sum2 = tf.summary.scalar(netname + "l2_avg_{}_{}".format(netname, k), tf.reduce_mean(self.l2_avg[k]))
                     sum3 = tf.summary.scalar(netname + "loss_max_{}_{}".format(netname, k), tf.reduce_mean(self.l_max[k]))
