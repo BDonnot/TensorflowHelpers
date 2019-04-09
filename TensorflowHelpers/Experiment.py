@@ -179,6 +179,8 @@ class ExpLogger:
         self.params = params
         self.epochsize = epochsize
         self.saveEachEpoch = saveEachEpoch
+        self.prev_log_loss = 0
+        self.prev_loss = 0
 
     def logtf(self, minibatchnum, graph, data, sess, forcesaving=False):
         """
@@ -200,8 +202,9 @@ class ExpLogger:
         computed = False
         error_nan = False
         loss_ = np.NaN
-        graph.start_test(sess)
         log_mn_num = int(np.log(minibatchnum +1))
+
+        graph.start_test(sess)
         if forcesaving or \
                 (minibatchnum % self.params.save_minibatch_loss == 0) :
             computed = True
@@ -227,8 +230,15 @@ class ExpLogger:
 
         if forcesaving or \
                 (self.saveEachEpoch and minibatchnum % self.epochsize == 0) or \
-                (minibatchnum % self.params.save_loss == 0)or \
-                (log_mn_num % self.params.save_log_loss == 0):
+                (minibatchnum >= self.prev_loss and minibatchnum % self.epochsize == 0) or \
+                (log_mn_num >= self.prev_log_loss and minibatchnum % self.epochsize == 0):
+
+            if minibatchnum >= self.prev_loss and minibatchnum % self.epochsize == 0:
+                self.prev_loss += self.params.save_loss
+
+            if log_mn_num >= self.prev_log_loss and minibatchnum % self.epochsize == 0:
+                self.prev_log_loss += self.params.save_log_loss
+
             computed = True
             # compute error on training set and validation set (mandatory)
             _, loss_ = data.computetensorboard(
@@ -335,13 +345,13 @@ class ExpParam:
         self.logger = logger
         self.nameSaveLearning = name_exp
         # self.saver = saver
-        self.num_savings = num_savings
+        self.num_savings = num_savings if num_savings > 1 else 1
         self.save_loss = 0
         self.save_log_loss = 0
-        self.num_savings_minibatch = num_savings_minibatch
+        self.num_savings_minibatch = num_savings_minibatch if num_savings_minibatch > 1 else 1
         self.save_minibatch_loss = 0
         self.save_logminibatch_loss = 0
-        self.num_savings_model = num_savings_model
+        self.num_savings_model = num_savings_model if num_savings_model > 1 else 1
         self.save_model = 0
         self.epochsize = 0
         self.saveEachEpoch = saveEachEpoch
@@ -362,22 +372,22 @@ class ExpParam:
         :return:
         """
         #TODO display warnings when the number should be set to 1
-        self.epochsize = round(nrows/self.batch_size)  # number of minibatches per epoch
+        self.epochsize = int(nrows/self.batch_size)  # number of minibatches per epoch
         # pdb.set_trace()
         if self.epochsize == 0:
-            self.epochsize = 1
+            self.epochsize = int(1)
         self.total_minibatches = self.epochsize * self.num_epoch  # total number of minibatches
         # save the loss each "self.save_loss" minibatches
-        self.save_loss = round(self.total_minibatches / self.num_savings)
+        self.save_loss = int(self.total_minibatches / (self.num_savings))
         if self.save_loss == 0:
-            self.save_loss = 1
-        self.save_log_loss = round(np.log(self.total_minibatches) / np.log(self.num_savings))
+            self.save_loss = int(1)
+        self.save_log_loss = int(np.log(self.total_minibatches+1) /(self.num_savings))
         if self.save_log_loss == 0:
-            self.save_log_loss = 1
-        self.save_minibatch_loss = round(self.total_minibatches / self.num_savings_minibatch)
+            self.save_log_loss = int(1)
+        self.save_minibatch_loss = int(self.total_minibatches / (self.num_savings_minibatch))
         if self.save_minibatch_loss == 0:
             self.save_minibatch_loss = 1
-        self.save_model = round(self.total_minibatches / self.num_savings_model)
+        self.save_model = int(self.total_minibatches / (self.num_savings_model))
         if self.save_model == 0:
             self.save_model = 1
 
