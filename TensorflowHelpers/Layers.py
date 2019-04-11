@@ -367,6 +367,7 @@ class VAEBlock(Layer):
         self.cvae = cvae
         self.reconstruct_loss = reconstruct_loss
         self.layernum = layernum
+        self.last_pen_loss = 1.
 
         with tf.variable_scope("vae_block_{}".format(layernum)):
             with tf.variable_scope("vae_def_flexibility"):
@@ -497,6 +498,8 @@ class VAEBlock(Layer):
         """
         sess.run([self.assign_vae, self.assign_use_vae_enc],
                      feed_dict={self.amount_vae_ph: 1.0, self.use_vae_enc_ph: 1.0})
+        sess.run([self.assign_pen_reco_loss],
+                     feed_dict={self.pen_reco_loss_ph: self.last_pen_loss })
 
     def start_test(self, sess):
         """
@@ -506,6 +509,8 @@ class VAEBlock(Layer):
         """
         sess.run([self.assign_vae, self.assign_use_vae_enc],
                      feed_dict={self.amount_vae_ph: 0.0, self.use_vae_enc_ph: 1.0})
+        sess.run([self.assign_pen_reco_loss],
+                     feed_dict={self.pen_reco_loss_ph: 0. })
 
     def add_loss(self, previous_loss):
         """
@@ -517,5 +522,6 @@ class VAEBlock(Layer):
                       name="adding_reco_loss_{}".format(self.layernum))
 
     def tell_epoch(self, sess, epochnum):
+        self.last_pen_loss = 1./(1.+epochnum)
         sess.run([self.assign_pen_reco_loss],
-                     feed_dict={self.pen_reco_loss_ph: 1./(1.+epochnum)})
+                     feed_dict={self.pen_reco_loss_ph: self.last_pen_loss })

@@ -182,7 +182,7 @@ class ExpLogger:
         self.prev_log_loss = 0
         self.prev_loss = 0
 
-    def logtf(self, minibatchnum, graph, data, sess, forcesaving=False):
+    def logtf(self, minibatchnum, graph, data, sess, forcesaving=False, dict_summary=None):
         """
         Compute the validation set error, and the training set error and the minibatch error, and store them in tensorboard
         :param minibatchnum: current number of minibatches proccessed
@@ -227,6 +227,8 @@ class ExpLogger:
                 # do not bother to compute training and validation set error if
                 # the loss is nan.
                 return computed, True, loss_
+            elif dict_summary is not None:
+                dict_summary["loss_last_minibatch"] = float(loss_)
 
         if forcesaving or \
                 (self.saveEachEpoch and minibatchnum % self.epochsize == 0) or \
@@ -242,11 +244,12 @@ class ExpLogger:
             computed = True
             # compute error on training set and validation set (mandatory)
             _, loss_ = data.computetensorboard(
-                sess=sess, writers=self, graph=graph, xval=global_step, minibatchnum=minibatchnum)
+                sess=sess, writers=self, graph=graph, xval=global_step,
+                minibatchnum=minibatchnum, dict_summary=dict_summary)
             # compute error on the other datasets
             for savername in self.otherinfo:
                 data.computetensorboard_annex(sess=sess, writers=self, graph=graph, xval=global_step,
-                                              minibatchnum=minibatchnum, name=savername)
+                                              minibatchnum=minibatchnum, name=savername, dict_summary=dict_summary)
 
         graph.start_train(sess)
         return computed, error_nan, loss_
@@ -1050,7 +1053,8 @@ class Exp:
                                                                   graph=self.graph,
                                                                   data=self.data,
                                                                   sess=self.sess,
-                                                                  forcesaving=True)
+                                                                  forcesaving=True,
+                                                                  dict_summary=dict_summary)
 
         if computed:
             self.valloss.append(valloss)

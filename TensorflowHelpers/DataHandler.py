@@ -680,14 +680,15 @@ class ExpData:
         """
         return self.valData.nrowsX()
 
-    def computetensorboard(
-            self,
-            sess,
-            graph,
-            writers,
-            xval,
-            minibatchnum,
-            sum=False):
+    def computetensorboard(self,
+                           sess,
+                           graph,
+                           writers,
+                           xval,
+                           minibatchnum,
+                           sum=False,
+                           dict_summary=None
+    ):
         """
         Compute and log (using writers) the errors on the training set and validation set
         Return the error ON THE VALIDATION SET
@@ -707,6 +708,8 @@ class ExpData:
         error_nan, trainloss = self.computetensorboard_aux(
             sess=sess, graph=graph, writer=writers.tfwriter.trainwriter, xval=xval,
             minibatchnum=minibatchnum, train=True, name="Train", textlogger=writers.logger)
+        if not error_nan and dict_summary is not None:
+            dict_summary["training_loss"] = float(trainloss)
         # switch the reader to the the "validation" dataset for reporting the
         # training error
         sess.run(self.validation_init_op)
@@ -714,6 +717,8 @@ class ExpData:
             error_nan, valloss = self.computetensorboard_aux(
                 sess=sess, graph=graph, writer=writers.tfwriter.valwriter, xval=xval,
                 minibatchnum=minibatchnum, train=False, name="Validation", textlogger=writers.logger)
+        if not error_nan and dict_summary is not None:
+            dict_summary["validation_loss"] = float(valloss)
 
         if not sum:
             res = valloss
@@ -731,7 +736,8 @@ class ExpData:
             name,
             xval,
             minibatchnum,
-            train=True):
+            train=True,
+            dict_summary=None):
         """
         Compute the error on a whole data set.
         Report the results in the text logger and in tensorboard.
@@ -761,6 +767,8 @@ class ExpData:
                 error_nan = not np.isfinite(loss_)
                 if error_nan:
                     break
+                elif dict_summary is not None:
+                    dict_summary["loss_{}".format(name)] = float(loss_)
             except tf.errors.OutOfRangeError:
                 break
         # name = "Train" if train else "Validation"
@@ -823,7 +831,7 @@ class ExpData:
                     arr=self.sds[k])
 
 
-    def computetensorboard_annex(self, sess, writers, graph, xval, minibatchnum, name):
+    def computetensorboard_annex(self, sess, writers, graph, xval, minibatchnum, name, dict_summary=None):
         """
         Will compute the error on the data "referenced" by "name", and store it using the TFWriters "writers"
         :param sess: a tensorflow session
@@ -845,7 +853,7 @@ class ExpData:
         sess.run(self.otheriterator_init[name])
         self.computetensorboard_aux(
             sess=sess, graph=graph, writer=writers.tfwriter.othersavers[name], xval=xval,
-            minibatchnum=minibatchnum, train=False, name=name, textlogger=writers.logger)
+            minibatchnum=minibatchnum, train=False, name=name, textlogger=writers.logger, dict_summary=dict_summary)
         sess.run(self.training_init_op)
 
 

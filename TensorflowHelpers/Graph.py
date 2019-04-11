@@ -324,7 +324,7 @@ class ComplexGraph(ExpGraphOneXOneY):
                  args_dec=(), kwargs_dec={},
                  kwargs_enc_dec=None,
                  spec_encoding={},
-                 resize_nn=None,
+                 size_nn_init=None,
 
                  has_vae=False,
                  latent_dim_size=None,
@@ -486,8 +486,8 @@ class ComplexGraph(ExpGraphOneXOneY):
 
         # 3. build the neural network
         self.nn = None
-        if resize_nn is not None:
-            self.resize_layer = DenseLayer(input=self.enc_output_raw, size=outputsize,
+        if size_nn_init is not None:
+            self.resize_layer = DenseLayer(input=self.enc_output_raw, size=size_nn_init,
                                            relu=False, bias=False,
                                            weight_normalization=False,
                                            keep_prob=None, layernum="resizing_layer")
@@ -603,7 +603,7 @@ class ComplexGraph(ExpGraphOneXOneY):
         Results are given for a minibatch of 1 example for a single forward pass.
         :return: the number of flops of the neural network build 
         """
-        res = self.resize_layer.get_nb_flops() if self.resize_layer is not None else 0
+        res = self.resize_layer.get_flops() if self.resize_layer is not None else 0
         for _,v in self.encoders.items():
             res += v.getflop()
         res += self.nn.getflop()
@@ -919,7 +919,7 @@ class ComplexGraph(ExpGraphOneXOneY):
                      feed_dict={self.amount_vae_ph: 1.0, self.use_vae_enc_ph: 1.0})
 
         if self.resize_layer is not None:
-            self.resize_layer.startexp(sess)
+            self.resize_layer.start_exp(sess)
         for _, v in self.encoders.items():
             v.startexp(sess)
         self.nn.startexp(sess)
