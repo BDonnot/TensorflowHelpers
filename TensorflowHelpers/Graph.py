@@ -697,7 +697,7 @@ class ComplexGraph(ExpGraphOneXOneY):
                              **kwargsNN)
         except Exception as except_:
             print(except_)
-            pdb.set_trace()
+            raise except_
 
     def _build_latent_space_addnoise(self, latent_dim_size, latent_hidden_layers, latent_keep_prob):
         self.amount_vae_ph = tf.placeholder(dtype=DTYPE_USED, shape=(), name="skip_conn")

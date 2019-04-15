@@ -10,17 +10,83 @@ DTYPE_USED = tf.float32
 DTYPE_NPY = np.float16 if DTYPE_USED == tf.float16 else np.float32
 from .Losses import l2
 
+class DroupoutHandler(object):
+    """
+    Help handling the dropout proba. By default this doesn't do "Monte Carlo" dropout.
+    It set to 1 the probability
+    """
+    def __init__(self, _sentinel=None, keep_prob=None, rate=None):
+        if _sentinel is not None:
+            raise TypeError("DroupoutHandler: you need to use keyword arguments \"keep_prob\" or \"rate\".")
+
+        if keep_prob is not None and rate is not None:
+            raise TypeError("DroupoutHandler: only one of \"keep_prob\" or \"rate\" argument should be specified.")
+
+        self.rate = None  # tensor representing the dropout rate
+        self.training_do_rate = None  # training dropout rate
+        self.handle_assignment = False  # is this instance in charge of maintaining a coherent behavior of self.rate
+
+        if keep_prob is None and rate is None:
+            return
+
+        if isinstance(rate, tf.Variable):
+            self.rate = rate
+            self.handle_assignment = False
+            return
+
+        self.handle_assignment = True
+        if keep_prob is not None:
+            rate = 1. - keep_prob
+
+        with tf.variable_scope("dropout_handling"):
+            self.training_do_rate = rate
+            # define variable to add noise: 0 no noise are added in the embedding, 1: all noise is added
+            self.do_rate_ph = tf.placeholder(dtype=DTYPE_USED, shape=(), name="dropout")
+            self.rate = tf.Variable(tf.zeros(shape=self.do_rate_ph.get_shape(), dtype=DTYPE_USED),
+                                          trainable=False)
+            self.assign_dropout = tf.assign(self.rate, self.do_rate_ph, name="assign_dropout")
+
+    def start_exp(self, sess):
+        if self.handle_assignment:
+            sess.run(self.assign_dropout, feed_dict={self.do_rate_ph: self.training_do_rate})
+
+    def start_train(self, sess):
+        """
+        Inform the model the training process has started
+        :return:
+        """
+        if self.handle_assignment:
+            sess.run(self.assign_dropout, feed_dict={self.do_rate_ph: self.training_do_rate})
+
+    def start_test(self, sess):
+        """
+        Inform the model the model
+        Deactivate all stochastic stuff
+        :return:
+        """
+        if self.handle_assignment:
+            sess.run(self.assign_dropout, feed_dict={self.do_rate_ph: 0.})
+
+
 class Layer(object):
     """
     Represent a neural network layer type, for example a fully connected, or a residual block
     """
-    def __init__(self):
+    def __init__(self, keep_prob=None, rate=None):
         self.flops = 0
         self.nbparams = 0
         self.res = None
 
+        if keep_prob is not None:
+            self.dropout_handler = DroupoutHandler(keep_prob=keep_prob, rate=rate)
+            self.rate = self.dropout_handler.rate
+        else:
+            self.rate = None
+            self.dropout_handler = None
+
     def start_exp(self, sess):
-        pass
+        if self.rate is not None:
+            self.dropout_handler.start_exp(sess)
 
     def tell_epoch(self, sess, epochnum):
         pass
@@ -42,7 +108,8 @@ class Layer(object):
         Inform the model the training process has started
         :return:
         """
-        pass
+        if self.rate is not None:
+            self.dropout_handler.start_train(sess)
 
     def start_test(self, sess):
         """
@@ -50,7 +117,8 @@ class Layer(object):
         Deactivate all stochastic stuff
         :return:
         """
-        pass
+        if self.rate is not None:
+            self.dropout_handler.start_test(sess)
 
     def add_loss(self, previous_loss):
         """
@@ -62,7 +130,7 @@ class Layer(object):
 
 class DenseLayer(Layer):
     def __init__(self, input, size, relu=False, bias=True, weight_normalization=False,
-                 keep_prob=None, layernum=0):
+                 keep_prob=None, rate=None, layernum=0):
         """
         for weight normalization see https://arxiv.org/abs/1602.07868
         for counting the flops of operations see https://mediatum.ub.tum.de/doc/625604/625604
@@ -74,16 +142,22 @@ class DenseLayer(Layer):
         :param keep_prob: a scalar tensor for dropout layer (None if you don't want to use it)
         :param layernum: number of layer (this layer in the graph)
         """
-        Layer.__init__(self)
+
+        if input is None:
+            raise TypeError("DenseLayer: impossible to have an input with value \"None\"")
+
         nin_ = int(input.get_shape()[1])
-        self.nbparams = 0  # number of trainable parameters
-        self.flops = 0  # flops for a batch on 1 data
-        self.input = input
-        self.weightnormed = False
-        self.bias = False
-        self.relued = False
-        self.res = None
         with tf.variable_scope("dense_layer_{}".format(layernum)):
+            Layer.__init__(self, keep_prob=keep_prob, rate=rate)
+
+            self.nbparams = 0  # number of trainable parameters
+            self.flops = 0  # flops for a batch on 1 data
+            self.input = input
+            self.weightnormed = False
+            self.bias = False
+            self.relued = False
+            self.res = None
+
             self.w_ = tf.get_variable(name="weights_matrix",
                                       shape=[nin_, size],
                                       initializer=tf.contrib.layers.xavier_initializer(dtype=tf.float32, uniform=False),
@@ -140,8 +214,8 @@ class DenseLayer(Layer):
                 # for debugginh initialization of weight normalization
                 res = self.res_
 
-            if keep_prob is not None:
-                res = tf.nn.dropout(res, rate=1.-keep_prob, name="applying_dropout")
+            if self.rate is not None:
+                res = tf.nn.dropout(res, rate=self.rate, name="applying_dropout")
                 # we consider that generating random number count for 1 operation
                 self.flops += size  # generate the "size" real random numbers
                 self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
@@ -171,7 +245,7 @@ class DenseLayer(Layer):
 
 class ResidualBlock(Layer):
     def __init__(self, input, size, relu=False, bias=True,
-                 weight_normalization=False, keep_prob=None, outputsize=None, layernum=0,
+                 weight_normalization=False, keep_prob=None, rate=None, outputsize=None, layernum=0,
                  layerClass=DenseLayer,
                  kwardslayer={}):
         """
@@ -199,13 +273,16 @@ class ResidualBlock(Layer):
         :param kwardslayer: the key-words arguments pass when building the instances of class layerClass
         """
 
-        Layer.__init__(self)
-
-        self.input = input
-        self.weightnormed = weight_normalization
-        self.res = input
+        if input is None:
+            raise TypeError("ResidualBlock: impossible to have an input with value \"None\"")
 
         with tf.variable_scope("residual_block_{}".format(layernum)):
+            Layer.__init__(self, keep_prob=keep_prob, rate=rate)
+
+            self.input = input
+            self.weightnormed = weight_normalization
+            self.res = input
+
             # treating "-> Bn() -> Relu()"
             if relu:
                 self.res = tf.nn.relu(self.res, name="first_relu")
@@ -216,7 +293,7 @@ class ResidualBlock(Layer):
             with tf.variable_scope("resBlock_first_layer"):
                 self.first_layer = layerClass(self.res, size, relu=True, bias=bias,
                                              weight_normalization=weight_normalization,
-                                             keep_prob=None,
+                                             keep_prob=None, rate=self.rate,
                                               **kwardslayer)
                 self.flops += self.first_layer.flops
                 self.nbparams += self.first_layer.get_nb_params()
@@ -227,16 +304,16 @@ class ResidualBlock(Layer):
             with tf.variable_scope("resBlock_second_layer"):
                 self.second_layer = layerClass(self.res, int(input.get_shape()[1]), relu=False, bias=bias,
                                                weight_normalization=weight_normalization,
-                                               keep_prob=None,
+                                               keep_prob=None, rate=self.rate,
                                                **kwardslayer)
                 self.flops += self.second_layer.get_flops()
                 self.nbparams += self.second_layer.get_nb_params()
 
             # treating "-> X + ."
 
-            if keep_prob is not None:
+            if self.rate is not None:
                 #TODO : copy pasted from DenseLayer
-                tmp = tf.nn.dropout(self.second_layer.get_res(), rate=1.-keep_prob, name="applying_dropout")
+                tmp = tf.nn.dropout(self.second_layer.get_res(), rate=self.rate, name="applying_dropout")
                 # we consider that generating random number count for 1 operation
                 self.flops += size  # generate the "size" real random numbers
                 self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
@@ -269,7 +346,7 @@ class ResidualBlock(Layer):
 
 class DenseBlock(Layer):
     def __init__(self, input, size, relu=False, bias=True, weight_normalization=False,
-                 keep_prob=None, nblayer=2, layernum=0,
+                 keep_prob=None, rate=None, nblayer=2, layernum=0,
                  layerClass=DenseLayer,
                  kwardslayer={}):
         """
@@ -294,18 +371,20 @@ class DenseBlock(Layer):
         :param layerClass: the class used to build the layers (DenseLayer or one of its derivatives) -- do not pass an object, but the class
         :param kwardslayer: the key-words arguments pass when building the instances of class layerClass
         """
-        Layer.__init__(self)
-        self.input = input
-        self.weightnormed = weight_normalization
-        size = int(input.get_shape()[1])
-        self.res = input
-        self.layers = []
 
         with tf.variable_scope("dense_block_{}".format(layernum)):
+            Layer.__init__(self, keep_prob=keep_prob, rate=rate)
+
+            self.input = input
+            self.weightnormed = weight_normalization
+            size = int(input.get_shape()[1])
+            self.res = input
+            self.layers = []
+
             for i in range(nblayer):
                 tmp_layer = layerClass(self.res, size, relu=True, bias=bias,
                                        weight_normalization=weight_normalization,
-                                       keep_prob=None, layernum=i,
+                                       keep_prob=None, rate=self.rate, layernum=i,
                                        **kwardslayer)
                 self.flops += tmp_layer.get_flops()
                 self.nbparams += tmp_layer.get_nb_params()
@@ -319,9 +398,9 @@ class DenseBlock(Layer):
                 self.res = tf.nn.relu(self.res, name="applying_relu")
                 self.flops += size  # we consider relu of requiring 1 computation per number (one max)
 
-            if keep_prob is not None:
+            if self.rate is not None:
                 #TODO : copy pasted from DenseLayer
-                self.res = tf.nn.dropout(self.res, rate=1.-keep_prob, name="applying_dropout")
+                self.res = tf.nn.dropout(self.res, rate=self.rate, name="applying_dropout")
                 # we consider that generating random number count for 1 operation
                 self.flops += size  # generate the "size" real random numbers
                 self.flops += size  # building the 0-1 vector of size "size" (thresholding "size" random values)
@@ -340,10 +419,9 @@ class DenseBlock(Layer):
         for i, l in enumerate(self.layers):
             l.initwn(sess=sess, scale_init=0.1/(i+1))
 
-
 class VAEBlock(Layer):
     def __init__(self, input, size, cvae=None, sizes=[], relu=False, bias=True,
-                 weight_normalization=False, keep_prob=None, layernum=0,
+                 weight_normalization=False, keep_prob=None, rate=None, layernum=0,
                  reconstruct_loss=l2
                  ):
         """
@@ -358,18 +436,23 @@ class VAEBlock(Layer):
         :param layernum:
         :param reconstruct_loss:
         """
-        Layer.__init__(self)
-        self.input = input
-        self.weightnormed = weight_normalization
-        self.res = input
-        self.layers = []
-        self.size_latent = size
-        self.cvae = cvae
-        self.reconstruct_loss = reconstruct_loss
-        self.layernum = layernum
-        self.last_pen_loss = 1.
+
+        if input is None:
+            raise TypeError("VAEBlock: impossible to have an input with value \"None\"")
 
         with tf.variable_scope("vae_block_{}".format(layernum)):
+            Layer.__init__(self, keep_prob=None, rate=None)  # keep prob only forwarded to internal layers
+
+            self.weightnormed = weight_normalization
+            self.size_latent = size
+            self.cvae = cvae
+            self.reconstruct_loss = reconstruct_loss
+            self.layernum = layernum
+            self.last_pen_loss = 1.
+            self.res = input
+            self.input = input
+            self.layers = []
+
             with tf.variable_scope("vae_def_flexibility"):
                 # define variable to add noise: 0 no noise are added in the embedding, 1: all noise is added
                 self.amount_vae_ph = tf.placeholder(dtype=DTYPE_USED, shape=(), name="skip_conn")
@@ -397,13 +480,13 @@ class VAEBlock(Layer):
 
             if cvae is not None:
                 with tf.variable_scope("cvae_concat"):
-                    self.res = tf.concat((self.latent_z_, self.cvae), axis=1, name="cvae_input_concatenantion")
+                    self.res = tf.concat((self.res, self.cvae), axis=1, name="cvae_input_concatenantion")
 
             with tf.variable_scope("encoder"):
                 for i, sz in enumerate(sizes):
                     tmp_layer = DenseLayer(self.res, sz, relu=True, bias=bias,
                                            weight_normalization=weight_normalization,
-                                           keep_prob=keep_prob, layernum=i)
+                                           keep_prob=keep_prob, rate=self.rate, layernum=i)
                     self.flops += tmp_layer.get_flops()
                     self.nbparams += tmp_layer.get_nb_params()
                     self.res = tmp_layer.get_res()
@@ -411,10 +494,10 @@ class VAEBlock(Layer):
 
                 # extract mean and std
                 self.mu_vae = DenseLayer(input=self.res, size=self.size_latent, layernum="mu",
-                                         relu=False, keep_prob=None, bias=False)
+                                         relu=False, keep_prob=None, rate=None, bias=False)
                 # build the mean
                 self.log_std = DenseLayer(input=self.res, size=self.size_latent , layernum="log_std",
-                                          relu=False, keep_prob=None, bias=False)
+                                          relu=False, keep_prob=None, rate=None, bias=False)
 
                 self.res = tf.identity(self.mu_vae.get_res(), name="extracting_embedding")
 
@@ -440,7 +523,7 @@ class VAEBlock(Layer):
                 for i, sz in enumerate(sizes[::-1]):
                     tmp_layer = DenseLayer(tmp, sz, relu=True, bias=bias,
                                            weight_normalization=weight_normalization,
-                                           keep_prob=keep_prob, layernum=i)
+                                           keep_prob=None, rate=self.rate, layernum=i)
                     self.flops += tmp_layer.get_flops()
                     self.nbparams += tmp_layer.get_nb_params()
                     tmp = tmp_layer.get_res()
@@ -448,7 +531,7 @@ class VAEBlock(Layer):
 
                 # TODO add final layer
                 self.reconstruct = DenseLayer(input=self.res, size=self.input.shape[1], layernum="reconstruction",
-                                              relu=False, keep_prob=None, bias=False)
+                                              relu=False, keep_prob=None, rate=None, bias=False)
                 self.flops += self.reconstruct.get_flops()
                 self.nbparams += self.reconstruct.get_nb_params()
                 self.layers.append(self.reconstruct)
@@ -481,6 +564,17 @@ class VAEBlock(Layer):
         """
         sess.run([self.assign_use_vae_enc], feed_dict={self.use_vae_enc_ph: 1.0})
 
+    def get_flops(self):
+        res = super(VAEBlock, self).get_flops()
+        for l in self.layers:
+            res += l.get_flops()
+        return res
+
+    def get_nb_params(self):
+        res = super(VAEBlock, self).get_nb_params()
+        for l in self.layers:
+            res += l.get_nb_params()
+        return res
 
     def start_exp(self, sess):
         """
@@ -488,6 +582,9 @@ class VAEBlock(Layer):
         :param sess:
         :return:
         """
+        super(VAEBlock, self).start_exp(sess)
+        for l in self.layers:
+            l.start_exp(sess)
         sess.run([self.assign_vae, self.assign_use_vae_enc],
                      feed_dict={self.amount_vae_ph: 1.0, self.use_vae_enc_ph: 1.0})
 
@@ -496,6 +593,9 @@ class VAEBlock(Layer):
         Inform the model the training process has started
         :return:
         """
+        super(VAEBlock, self).start_train(sess)
+        for l in self.layers:
+            l.start_train(sess)
         sess.run([self.assign_vae, self.assign_use_vae_enc],
                      feed_dict={self.amount_vae_ph: 1.0, self.use_vae_enc_ph: 1.0})
         sess.run([self.assign_pen_reco_loss],
@@ -507,10 +607,13 @@ class VAEBlock(Layer):
         Deactivate all stochastic stuff
         :return:
         """
+        super(VAEBlock, self).start_test(sess)
+        for l in self.layers:
+            l.start_test(sess)
         sess.run([self.assign_vae, self.assign_use_vae_enc],
                      feed_dict={self.amount_vae_ph: 0.0, self.use_vae_enc_ph: 1.0})
         sess.run([self.assign_pen_reco_loss],
-                     feed_dict={self.pen_reco_loss_ph: 0. })
+                     feed_dict={self.pen_reco_loss_ph: 0.})
 
     def add_loss(self, previous_loss):
         """
